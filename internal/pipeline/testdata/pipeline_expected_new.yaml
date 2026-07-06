@@ -1,0 +1,6 @@
+steps:
+  - name: terraform-apply-dev
+    run: terraform apply -auto-approve
+    project_id: dev-123
+    state_prefix: weave/dev
+    env: dev

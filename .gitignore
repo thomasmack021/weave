@@ -1,0 +1,10 @@
+# Compiled binaries
+/weave
+/weaved
+
+# OS noise
+.DS_Store
+
+# Editor state
+.idea/
+.vscode/

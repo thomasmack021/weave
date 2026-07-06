@@ -1,0 +1,5 @@
+# CI pipeline for the dev landing zone
+steps:
+  # Static validation must pass before any apply
+  - name: lint
+    run: terraform fmt -check

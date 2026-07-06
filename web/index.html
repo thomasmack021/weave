@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Weave — Ship to the cloud, skip the Terraform</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #1a2233; --muted: #5b667a;
+    --accent: #4f46e5; --accent-ink: #ffffff; --line: #e3e7ee;
+    --ok: #059669; --warn: #b45309; --err: #dc2626; --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  header {
+    background: linear-gradient(135deg, #312e81, #4f46e5);
+    color: #fff; padding: 28px 24px;
+  }
+  header .wrap { max-width: 860px; margin: 0 auto; }
+  header h1 { margin: 0; font-size: 24px; letter-spacing: .3px; }
+  header p { margin: 6px 0 0; opacity: .85; font-size: 14px; }
+  main { max-width: 860px; margin: 28px auto 64px; padding: 0 24px; }
+  .steps { display: flex; gap: 8px; margin-bottom: 20px; font-size: 13px; }
+  .step { flex: 1; text-align: center; padding: 8px 6px; border-radius: 999px;
+          background: var(--line); color: var(--muted); }
+  .step.active { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  .step.done { background: #c7d2fe; color: #312e81; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 22px; margin-bottom: 14px;
+  }
+  .card.clickable { cursor: pointer; transition: border-color .12s, transform .12s; }
+  .card.clickable:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .card h3 { margin: 0 0 4px; font-size: 17px; }
+  .card .desc { color: var(--muted); font-size: 14px; margin: 0; }
+  .badge { display: inline-block; font-size: 12px; color: var(--muted);
+           border: 1px solid var(--line); border-radius: 999px; padding: 1px 10px; margin-left: 8px; }
+  label { display: block; font-weight: 600; font-size: 14px; margin: 18px 0 6px; }
+  label small { font-weight: 400; color: var(--muted); }
+  .req { color: var(--err); }
+  input[type=text], input[type=number] {
+    width: 100%; padding: 10px 12px; font-size: 15px; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 8px; background: #fff;
+  }
+  input:focus { outline: 2px solid #c7d2fe; border-color: var(--accent); }
+  .options { display: grid; gap: 10px; }
+  .option {
+    display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px;
+    border: 1px solid var(--line); border-radius: 10px; cursor: pointer; background: #fff;
+  }
+  .option:has(input:checked) { border-color: var(--accent); background: #eef2ff; }
+  .option input { margin-top: 4px; accent-color: var(--accent); }
+  .option .t { font-weight: 600; font-size: 15px; }
+  .option .d { color: var(--muted); font-size: 13px; }
+  .row { display: flex; gap: 10px; margin-top: 22px; }
+  button {
+    font-size: 15px; font-weight: 600; padding: 11px 22px; border-radius: 9px;
+    border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button.primary:hover { filter: brightness(1.07); }
+  button:disabled { opacity: .55; cursor: wait; }
+  .errors { border: 1px solid #fecaca; background: #fef2f2; color: var(--err);
+            border-radius: 10px; padding: 14px 18px; margin: 16px 0; font-size: 14px; }
+  .errors ul { margin: 6px 0 0; padding-left: 20px; }
+  .review dt { font-weight: 600; font-size: 13px; color: var(--muted); margin-top: 12px; }
+  .review dd { margin: 2px 0 0; font-size: 15px; }
+  .result { text-align: center; padding: 40px 22px; }
+  .result .icon { font-size: 44px; }
+  .result h2 { margin: 12px 0 6px; }
+  .result p { color: var(--muted); margin: 0 0 22px; }
+  .result a.pr {
+    display: inline-block; background: var(--ok); color: #fff; font-weight: 600;
+    padding: 12px 26px; border-radius: 9px; text-decoration: none;
+  }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
+          background: var(--bg); border-radius: 6px; padding: 2px 7px; }
+  .hint { color: var(--muted); font-size: 13px; margin-top: 26px; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>Weave</h1>
+    <p>Provision platform-approved cloud infrastructure — no Terraform required. Every change ships as a reviewed pull request.</p>
+  </div>
+</header>
+<main>
+  <div class="steps" id="steps"></div>
+  <div id="app"></div>
+  <p class="hint">Your request is translated into your platform team's golden modules and opened as a pull request for review. You never touch IaC.</p>
+</main>
+<script>
+"use strict";
+const app = document.getElementById("app");
+const stepsEl = document.getElementById("steps");
+const STEPS = ["Choose service", "Configure", "Review & submit"];
+let catalog = [];
+let state = { step: 0, module: null, instanceName: "", inputs: {} };
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function renderSteps() {
+  stepsEl.innerHTML = STEPS.map((s, i) =>
+    `<div class="step ${i === state.step ? "active" : i < state.step ? "done" : ""}">${i + 1}. ${esc(s)}</div>`
+  ).join("");
+}
+
+/* Inputs the developer actually fills: not choice-managed (those are set
+   server-side by the selected option's expansion). */
+function formInputs(mod) {
+  return mod.inputs.filter(i => !i.managedByChoice);
+}
+
+function render() {
+  renderSteps();
+  if (state.step === 0) return renderCatalog();
+  if (state.step === 1) return renderConfigure();
+  if (state.step === 2) return renderReview();
+}
+
+async function loadCatalog() {
+  app.innerHTML = `<div class="card"><p class="desc">Loading service catalog…</p></div>`;
+  try {
+    const res = await fetch("/api/catalog");
+    if (!res.ok) throw new Error("catalog returned " + res.status);
+    catalog = await res.json();
+    render();
+  } catch (e) {
+    app.innerHTML = `<div class="errors">Could not load the service catalog (${esc(e.message)}). Is the platform registry reachable?</div>`;
+  }
+}
+
+function renderCatalog() {
+  if (!catalog.length) {
+    app.innerHTML = `<div class="card"><p class="desc">The catalog is empty. Ask your platform team to publish module specs.</p></div>`;
+    return;
+  }
+  app.innerHTML = catalog.map((m, i) => `
+    <div class="card clickable" data-i="${i}">
+      <h3>${esc(m.displayName || m.name)}<span class="badge">v${esc(m.version)}</span></h3>
+      <p class="desc">${esc(m.description || "")}</p>
+    </div>`).join("");
+  app.querySelectorAll(".card.clickable").forEach(el =>
+    el.addEventListener("click", () => {
+      state.module = catalog[+el.dataset.i];
+      state.inputs = {};
+      state.step = 1;
+      render();
+    }));
+}
+
+function renderConfigure() {
+  const m = state.module;
+  const fields = formInputs(m).map(inp => {
+    const req = inp.required ? `<span class="req">*</span>` : "";
+    const desc = inp.description ? `<small> — ${esc(inp.description)}</small>` : "";
+    if (inp.type === "choice") {
+      return `<label>${esc(inp.name)} ${req}${desc}</label>
+        <div class="options">${(inp.options || []).map(o => `
+          <label class="option">
+            <input type="radio" name="in_${esc(inp.name)}" value="${esc(o.value)}"
+              ${state.inputs[inp.name] === o.value ? "checked" : ""}>
+            <span><span class="t">${esc(o.label || o.value)}</span><br>
+            <span class="d">${esc(o.description || "")}</span></span>
+          </label>`).join("")}
+        </div>`;
+    }
+    if (inp.type === "bool") {
+      return `<label class="option" style="margin-top:18px">
+        <input type="checkbox" name="in_${esc(inp.name)}" ${state.inputs[inp.name] === "true" ? "checked" : ""}>
+        <span><span class="t">${esc(inp.name)}</span> ${req}<br><span class="d">${esc(inp.description || "")}</span></span>
+      </label>`;
+    }
+    const typeAttr = inp.type === "number" ? "number" : "text";
+    return `<label>${esc(inp.name)} ${req}${desc}</label>
+      <input type="${typeAttr}" name="in_${esc(inp.name)}" value="${esc(state.inputs[inp.name] || "")}">`;
+  }).join("");
+
+  app.innerHTML = `
+    <div class="card">
+      <h3>${esc(m.displayName || m.name)}</h3>
+      <p class="desc">${esc(m.description || "")}</p>
+      <label>Instance name <span class="req">*</span><small> — how this resource will be identified (e.g. <span class="mono">checkout-api</span>)</small></label>
+      <input type="text" name="instanceName" value="${esc(state.instanceName)}">
+      ${fields}
+      <div id="formErrors"></div>
+      <div class="row">
+        <button id="back">Back</button>
+        <button class="primary" id="next">Review request</button>
+      </div>
+    </div>`;
+
+  document.getElementById("back").onclick = () => { state.step = 0; render(); };
+  document.getElementById("next").onclick = () => {
+    collectForm();
+    const missing = [];
+    if (!state.instanceName.trim()) missing.push("Instance name is required.");
+    formInputs(m).forEach(inp => {
+      if (inp.required && !(state.inputs[inp.name] || "").trim())
+        missing.push(`"${inp.name}" is required.`);
+    });
+    if (missing.length) return showErrors("formErrors", missing);
+    state.step = 2;
+    render();
+  };
+}
+
+function collectForm() {
+  const m = state.module;
+  state.instanceName = (app.querySelector('[name="instanceName"]') || { value: "" }).value.trim();
+  formInputs(m).forEach(inp => {
+    if (inp.type === "choice") {
+      const sel = app.querySelector(`[name="in_${inp.name}"]:checked`);
+      if (sel) state.inputs[inp.name] = sel.value; else delete state.inputs[inp.name];
+    } else if (inp.type === "bool") {
+      const el = app.querySelector(`[name="in_${inp.name}"]`);
+      if (el && el.checked) state.inputs[inp.name] = "true"; else delete state.inputs[inp.name];
+    } else {
+      const el = app.querySelector(`[name="in_${inp.name}"]`);
+      const v = el ? el.value.trim() : "";
+      if (v) state.inputs[inp.name] = v; else delete state.inputs[inp.name];
+    }
+  });
+}
+
+function optionLabel(inp, value) {
+  const o = (inp.options || []).find(o => o.value === value);
+  return o ? (o.label || o.value) : value;
+}
+
+function renderReview() {
+  const m = state.module;
+  const rows = formInputs(m)
+    .filter(inp => state.inputs[inp.name] !== undefined)
+    .map(inp => `<dt>${esc(inp.name)}</dt>
+      <dd>${esc(inp.type === "choice" ? optionLabel(inp, state.inputs[inp.name]) : state.inputs[inp.name])}</dd>`)
+    .join("");
+  app.innerHTML = `
+    <div class="card review">
+      <h3>Review your request</h3>
+      <dl>
+        <dt>Service</dt><dd>${esc(m.displayName || m.name)} <span class="badge">v${esc(m.version)}</span></dd>
+        <dt>Instance name</dt><dd class="mono">${esc(state.instanceName)}</dd>
+        ${rows}
+      </dl>
+      <div id="submitErrors"></div>
+      <div class="row">
+        <button id="back">Back</button>
+        <button class="primary" id="submit">Submit — open pull request</button>
+      </div>
+    </div>`;
+  document.getElementById("back").onclick = () => { state.step = 1; render(); };
+  document.getElementById("submit").onclick = submit;
+}
+
+function showErrors(where, msgs) {
+  document.getElementById(where).innerHTML =
+    `<div class="errors">Please fix the following:<ul>${msgs.map(m => `<li>${esc(m)}</li>`).join("")}</ul></div>`;
+}
+
+async function submit() {
+  const btn = document.getElementById("submit");
+  btn.disabled = true; btn.textContent = "Submitting…";
+  try {
+    const res = await fetch("/api/scaffold", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        moduleType: state.module.name,
+        instanceName: state.instanceName,
+        inputs: state.inputs,
+      }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 201) return renderResult("🎉", "Request submitted!",
+      "Your change is now a pull request awaiting your platform team's review.",
+      body.prUrl, body.branch);
+    if (res.status === 200 && body.changed === false) return renderResult("✅", "Already up to date",
+      "This exact resource already exists — no changes were needed and no PR was opened.");
+    if (res.status === 422) {
+      showErrors("submitErrors", body.errors || ["Your request was rejected by validation."]);
+    } else if (res.status === 502 && body.branch) {
+      showErrors("submitErrors", [
+        `Your change was pushed (branch ${body.branch}) but the pull request could not be opened. ` +
+        `Nothing is lost — retry, or ask your platform team to open a PR for that branch.`]);
+    } else {
+      showErrors("submitErrors", [body.error || `The platform returned an unexpected error (${res.status}). This is not your fault — contact your platform team.`]);
+    }
+  } catch (e) {
+    showErrors("submitErrors", ["Network error: " + e.message]);
+  } finally {
+    if (document.getElementById("submit")) {
+      btn.disabled = false; btn.textContent = "Submit — open pull request";
+    }
+  }
+}
+
+function renderResult(icon, title, text, prUrl, branch) {
+  state.step = 2; renderSteps();
+  app.innerHTML = `
+    <div class="card result">
+      <div class="icon">${icon}</div>
+      <h2>${esc(title)}</h2>
+      <p>${esc(text)}</p>
+      ${prUrl ? `<a class="pr" href="${esc(prUrl)}" target="_blank" rel="noopener">View pull request →</a>` : ""}
+      ${branch ? `<p style="margin-top:14px"><span class="mono">${esc(branch)}</span></p>` : ""}
+      <div class="row" style="justify-content:center">
+        <button id="again">Provision something else</button>
+      </div>
+    </div>`;
+  document.getElementById("again").onclick = () => {
+    state = { step: 0, module: null, instanceName: "", inputs: {} };
+    loadCatalog();
+  };
+}
+
+loadCatalog();
+</script>
+</body>
+</html>

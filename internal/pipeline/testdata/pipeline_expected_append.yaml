@@ -1,0 +1,10 @@
+# CI pipeline for the dev landing zone
+steps:
+  # Static validation must pass before any apply
+  - name: lint
+    run: terraform fmt -check
+  - name: terraform-apply-dev
+    run: terraform apply -auto-approve
+    project_id: dev-123
+    state_prefix: weave/dev
+    env: dev
