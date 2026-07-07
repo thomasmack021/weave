@@ -136,3 +136,30 @@ registry; per-request attribution + token rotation.
 - The 422/500 fault-attribution firewall and the DTO no-leak rules are
   invariants; their tests must never be weakened.
 - End every turn by rewriting this file and giving the user a resume prompt.
+
+## Resume prompt (for the next session)
+
+All four tasks the user approved on 2026-07-07 are done and pushed to
+`github.com/thomasmack021/weave` (through commit `1e054db`): publish, Day-1
+workspace scaffolding (`POST /api/workspace`), the GitHub/GitLab/Bitbucket
+Server PR providers, and the **Gate 1 RBAC/sessions foundation**
+(`internal/store` + `DESIGN.md`). Working tree clean; nothing half-done.
+
+The Gate 1 foundation is deliberately **not wired to endpoints**. The next two
+increments are queued (see the task list / roadmap items 4a and 4b above), and
+their design is already locked in `DESIGN.md` §8 — so they do **not** need
+re-approval, only execution:
+
+1. **Increment 2 — identity**: the pluggable `Authenticator`
+   (proxy-header + static dev backend) → `store.Principal`, plus PostgreSQL
+   session issue/verify, injected into `server.New`. No endpoint enforcement
+   yet.
+2. **Increment 3 — enforcement**: use-case-scoped `/api/*`; the orchestrator
+   resolves per-use-case repo config + credentials from
+   `store.Store`/`CredentialStore` instead of global config; every action
+   RBAC-checked; admin endpoints for use cases / memberships / group grants;
+   wizard use-case selector.
+
+Start with `weave-onboard`, verify with `weave-verify` (now includes
+`go test -tags=integration ./internal/store/`, Docker required), then pick up
+increment 2 red-first.
