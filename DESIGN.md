@@ -1,9 +1,9 @@
 # DESIGN — Gate 1: PostgreSQL sessions + multi-tenant use-case RBAC
 
-Status: **foundation in progress** (2026-07-07). This document is the agreed
-architecture for the gate; the code lands incrementally (see §8). It is the
-source of truth for *why* the data model looks the way it does — turn-level
-state still lives in `HANDOFF.md`.
+Status: **increments 1–2 done, increment 3 pending** (2026-07-07). This
+document is the agreed architecture for the gate; the code lands incrementally
+(see §8). It is the source of truth for *why* the data model looks the way it
+does — turn-level state still lives in `HANDOFF.md`.
 
 ## 1. Context & goal
 
@@ -27,10 +27,10 @@ a use case, but that use case's repo config and credentials come from the
 database (server side), and access is gated by the authenticated principal —
 so "config never comes from the HTTP request body" (invariant 7) still holds.
 
-## 2. Identity & the `Authenticator` seam  *(next increment — described here)*
+## 2. Identity & the `Authenticator` seam  *(done — increment 2)*
 
-Identity is resolved by a pluggable `Authenticator` that turns an inbound
-request into a `Principal{Subject, Groups}`:
+Identity is resolved by a pluggable `Authenticator` (`internal/auth`) that
+turns an inbound request into a `Principal{Subject, Groups}`:
 
 - **Proxy-header backend (production).** An auth proxy / SSO gateway
   (oauth2-proxy, Azure App Proxy, an ingress) terminates OIDC against **Entra
@@ -127,20 +127,28 @@ the `use_case` row.
 
 ## 8. Rollout increments
 
-1. **This session — foundation (reversible, not wired to endpoints):**
-   §3 model + `EffectiveRole`, migrations, `Store` interface + `PostgresStore`,
+1. ✅ **Foundation (reversible, not wired to endpoints):** §3 model +
+   `EffectiveRole`, migrations, `Store` interface + `PostgresStore`,
    `CredentialStore` + `StaticCredentialStore`, unit + integration tests.
-2. **Next — identity:** the `Authenticator` middleware (proxy-header + static
-   backends) and PostgreSQL session issue/verify on the HTTP boundary.
+2. ✅ **Identity (`internal/auth`):** the pluggable `Authenticator`
+   (proxy-header + static backends) → `Principal`; `auth.Service` with
+   PostgreSQL session issue/verify (`/api/session`: login/whoami/logout) and a
+   principal-injecting `Middleware`. Attached to the server via opt-in
+   `WithSessions` and wired in `cmd/weaved` behind `WEAVE_AUTH_MODE` (+
+   `WEAVE_DATABASE_URL`); migrations apply on boot. The v1 / demo paths run
+   unchanged when auth is off. Session tokens are stored only as a SHA-256
+   hash, and a session snapshots the principal's groups (migration `0002`) so a
+   cookie authenticates without proxy headers. **Not yet enforcing** which use
+   cases a principal may act on — that is increment 3.
 3. **Next — enforcement:** `/api/catalog`, `/api/workspace`, `/api/scaffold`
    become use-case-scoped; the orchestrator resolves per-use-case repo config
    and credentials from the `Store` + `CredentialStore` instead of global
    config; every action is RBAC-checked. Admin endpoints to manage use cases,
-   memberships, and group grants.
+   memberships, and group grants; a bootstrap-admin mechanism.
 
 Until increment 3 lands, the live server keeps its v1 single-tenant config path
-untouched — the foundation compiles and is fully tested but changes no request
-behaviour.
+for the business endpoints — identity is established but not yet used to gate
+scaffolding.
 
 ## 9. Invariants preserved
 

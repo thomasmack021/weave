@@ -43,7 +43,8 @@ probably wrong.
 | `internal/git` | `Committer` (Stage/Commit/CheckoutBranch/Push), package-level `Clone` (the safety boundary), four `PullRequestProvider`s (Bitbucket Cloud/Server, GitHub, GitLab) over one `postPRJSON` spine | Core |
 | `internal/orchestrate` | Fail-before-mutate composition: `Run` (Day 2) and `InitWorkspace` (Day 1) over a shared `publish` tail | The write path |
 | `internal/server` | HTTP API + embedded wizard serving; classification-only error mapping (`errors.Is`), no validation logic | API boundary |
-| `internal/store` | **Gate 1 foundation, NOT yet wired to endpoints**: Postgres RBAC + sessions (`Store`/`PostgresStore`, `golang-migrate`, pure `EffectiveRole`, `CredentialStore`). See `DESIGN.md` | Foundation / not enforced |
+| `internal/store` | **Gate 1**: Postgres RBAC + sessions (`Store`/`PostgresStore`, `golang-migrate`, pure `EffectiveRole`, `ResolvePrincipal`, `CredentialStore`). See `DESIGN.md` | Foundation |
+| `internal/auth` | **Gate 1 increment 2**: `Authenticator` (header/static) → `store.Principal`; `auth.Service` sessions + middleware (`/api/session`); opt-in via `server.WithSessions`. NOT yet enforcing use-case access | Identity / not enforced |
 | `internal/demo` | Self-contained local demo env + THE e2e capstones (Day 1 + Day 2); never imported by production code | Test/demo only |
 | `cmd/weaved` | Assembly-only main + pure `loadConfig`; `newPRProvider` factory; `-demo` flag | Entrypoint |
 | `web/` | Single-file vanilla-JS wizard, embedded via `embed.FS`, no build step | Frontend |

@@ -14,12 +14,18 @@
 - **Weave v1 is SHIPPED and PUBLISHED**, now on
   `github.com/thomasmack021/weave` (public). Three post-v1 gates are fully
   done (publish + Day-1 workspace scaffolding + multi-provider PRs) and the
-  fourth (Postgres/RBAC) has its **foundation** done. Full `weave-verify`
-  playbook green: `go build ./...`, `go vet ./...`, `gofmt -l internal cmd
-  web` all clean; `go test ./... -count=1`: **all 12 test-bearing packages
-  ok, 107 test functions** (79 at ship; +12 Day-1 init; +11 PR providers;
-  +5 store unit). Plus **3 testcontainers integration tests** green under
+  fourth (Postgres/RBAC) has **increments 1 (foundation) and 2 (identity +
+  sessions)** done. Full `weave-verify` playbook green: `go build ./...`,
+  `go vet ./...`, `gofmt -l internal cmd web` all clean; `go test ./...
+  -count=1`: **all 13 test-bearing packages ok, 125 test functions**. Plus
+  **3 testcontainers integration tests** green under
   `go test -tags=integration ./internal/store/` (Docker; real Postgres 16).
+- **Increment 2 proven end-to-end against real Postgres**: `weaved` with
+  `WEAVE_AUTH_MODE=static` + `WEAVE_DATABASE_URL` applied both migrations on
+  boot and served the full `/api/session` lifecycle — whoami (200 + subject/
+  groups), login (200 + `Set-Cookie` weave_session), cookie-authenticated
+  whoami (200 via `ResolvePrincipal`), logout (204). Verified the `users` row
+  was upserted and `schema_migrations` = version 2, not dirty.
 - The `internal/demo` **end-to-end capstones** pass: `TestEndToEnd_DemoLoop`
   (Day 2) and the new `TestEndToEnd_WorkspaceInit` (Day 1) both drive the real
   production graph through the real HTTP API — fail-before-mutate proven
@@ -101,20 +107,24 @@ execution order; each still gets red-first TDD and honest verification):
    Provider-aware `WEAVE_PR_API` defaults; legacy `WEAVE_BITBUCKET_*` env vars
    still accepted. All red-first (httptest fakes per provider).
 4. 🚧 **PostgreSQL sessions + multi-tenant use-case RBAC** — user-approved,
-   design agreed and recorded in `DESIGN.md` (identity = trusted proxy header
-   → Entra + solo dev; **hybrid** authz = DB members OR Entra group grants;
-   per-use-case repo config + credentials behind a `CredentialStore`).
-   **Foundation DONE this session** (`internal/store`): pgx `PostgresStore`
-   behind a `Store` interface, embedded `golang-migrate` migrations, pure
-   `EffectiveRole`, `CredentialStore`/`StaticCredentialStore`, unit +
-   testcontainers integration tests — all red-first, all green. **NOT wired to
-   any endpoint yet** (v1 single-tenant config path untouched).
-   **← NEXT increments:** (a) `Authenticator` middleware (proxy-header +
-   static) + PostgreSQL session issue/verify on the HTTP boundary; (b)
-   use-case-scoped `/api/*` + orchestrator resolving per-use-case repo config &
-   credentials from the `Store`/`CredentialStore` + RBAC checks + admin
-   management endpoints. Both are their own steps; keep the foundation's
-   reversibility until (b) deliberately replaces the global config path.
+   design in `DESIGN.md` (identity = trusted proxy header → Entra + solo dev;
+   **hybrid** authz = DB members OR Entra group grants; per-use-case repo
+   config + credentials behind a `CredentialStore`).
+   - ✅ **Increment 1 — foundation** (`internal/store`): pgx `PostgresStore`
+     behind a `Store` interface, `golang-migrate` migrations, pure
+     `EffectiveRole`, `CredentialStore`, unit + testcontainers tests.
+   - ✅ **Increment 2 — identity + sessions** (`internal/auth`): pluggable
+     `Authenticator` (header/static) → `store.Principal`; `auth.Service`
+     PostgreSQL session issue/verify (`/api/session`) + principal middleware;
+     opt-in `server.WithSessions`; wired in `cmd/weaved` behind
+     `WEAVE_AUTH_MODE` + `WEAVE_DATABASE_URL` (migrations on boot). Proven
+     end-to-end vs real Postgres. All red-first.
+   - **← NEXT: increment 3 — enforcement.** Use-case-scoped `/api/*`;
+     orchestrator resolves per-use-case repo config & credentials from the
+     `Store`/`CredentialStore` (replacing global config); every action
+     RBAC-checked via `store.EffectiveRole`; admin endpoints (create use case,
+     add membership/group grant); bootstrap-admin; wizard use-case selector.
+     Keep fail-before-mutate and config-not-from-request.
 
 **Product context from the user (shapes the RBAC/registry data model):**
 admins onboard the source repos that contain the IaC modules; developers
@@ -139,27 +149,33 @@ registry; per-request attribution + token rotation.
 
 ## Resume prompt (for the next session)
 
-All four tasks the user approved on 2026-07-07 are done and pushed to
-`github.com/thomasmack021/weave` (through commit `1e054db`): publish, Day-1
-workspace scaffolding (`POST /api/workspace`), the GitHub/GitLab/Bitbucket
-Server PR providers, and the **Gate 1 RBAC/sessions foundation**
-(`internal/store` + `DESIGN.md`). Working tree clean; nothing half-done.
+Gate 1 **increments 1 and 2 are done and pushed** to
+`github.com/thomasmack021/weave`: the RBAC/sessions foundation
+(`internal/store`) and identity + PostgreSQL sessions (`internal/auth`,
+`/api/session`, `WEAVE_AUTH_MODE`). Working tree clean; nothing half-done. All
+four originally-approved tasks (publish, Day-1 scaffolding, PR providers,
+Gate 1 foundation) plus increment 2 are complete.
 
-The Gate 1 foundation is deliberately **not wired to endpoints**. The next two
-increments are queued (see the task list / roadmap items 4a and 4b above), and
-their design is already locked in `DESIGN.md` §8 — so they do **not** need
-re-approval, only execution:
+**Next: increment 3 — enforcement** (design locked in `DESIGN.md` §8, so it
+needs execution, not re-approval):
 
-1. **Increment 2 — identity**: the pluggable `Authenticator`
-   (proxy-header + static dev backend) → `store.Principal`, plus PostgreSQL
-   session issue/verify, injected into `server.New`. No endpoint enforcement
-   yet.
-2. **Increment 3 — enforcement**: use-case-scoped `/api/*`; the orchestrator
-   resolves per-use-case repo config + credentials from
-   `store.Store`/`CredentialStore` instead of global config; every action
-   RBAC-checked; admin endpoints for use cases / memberships / group grants;
-   wizard use-case selector.
+- Resolve per-use-case config: the orchestrator gets repo URL / slug /
+  provider / branch / env + credential token from `store.Store` +
+  `CredentialStore` per request, replacing the global `orchestrate.Config`
+  path. (This is the deliberate move that makes one Weave multi-tenant.)
+- Use-case-scoped endpoints (e.g. `/api/usecases/{key}/scaffold`,
+  `/api/usecases/{key}/workspace`, `GET /api/usecases`), each gated by
+  `store.EffectiveRole(useCaseID, principal)` ≥ the required role.
+- Admin endpoints: create use case, add membership, add group grant (require
+  admin). A bootstrap-admin mechanism (e.g. `WEAVE_BOOTSTRAP_ADMINS`) solves
+  the first-admin problem.
+- Wizard: a use-case selector; the catalog/scaffold calls become
+  use-case-scoped.
+- Preserve fail-before-mutate and "config never from the request" (the
+  request selects a use-case *key*; config + credentials come from the DB).
 
-Start with `weave-onboard`, verify with `weave-verify` (now includes
+Start with `weave-onboard`, verify with `weave-verify` (includes
 `go test -tags=integration ./internal/store/`, Docker required), then pick up
-increment 2 red-first.
+increment 3 red-first. Note the open design choice to make early: the
+endpoint URL shape (path-scoped `/api/usecases/{key}/…` vs. a `useCase` field
+in the body) — pick path-scoped unless the user says otherwise.

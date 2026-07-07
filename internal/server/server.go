@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 
+	"github.com/thomasmack021/weave/internal/auth"
 	"github.com/thomasmack021/weave/internal/orchestrate"
 	"github.com/thomasmack021/weave/internal/registry"
 )
@@ -35,6 +36,9 @@ type Server struct {
 	registry    registry.ModuleRegistry
 	scaffolder  Scaffolder
 	initializer WorkspaceInitializer
+	// sessions is the optional identity/session layer. When nil (v1 / demo),
+	// the server serves anonymously with no /api/session endpoint.
+	sessions *auth.Service
 }
 
 // New constructs a Server with the embedded static asset filesystem, the
@@ -42,6 +46,15 @@ type Server struct {
 // and the WorkspaceInitializer backing /api/workspace injected.
 func New(static fs.FS, reg registry.ModuleRegistry, scaffolder Scaffolder, initializer WorkspaceInitializer) *Server {
 	return &Server{static: static, registry: reg, scaffolder: scaffolder, initializer: initializer}
+}
+
+// WithSessions attaches the identity/session layer: it mounts /api/session and
+// wraps every route with the principal-injecting middleware. Opt-in, so the v1
+// single-tenant and demo paths keep running with no database. Returns the
+// server for chaining.
+func (s *Server) WithSessions(svc *auth.Service) *Server {
+	s.sessions = svc
+	return s
 }
 
 // Handler returns the root HTTP handler for the server. It wires the liveness
@@ -58,10 +71,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/scaffold", s.handleScaffold)
 	mux.HandleFunc("/api/workspace", s.handleWorkspace)
 
+	// Identity/session endpoints exist only when the session layer is attached.
+	if s.sessions != nil {
+		mux.HandleFunc("/api/session", s.sessions.HandleSession)
+	}
+
 	// Everything else is served from the embedded frontend asset tree. The
 	// file server resolves "/" to index.html automatically.
 	mux.Handle("/", http.FileServer(http.FS(s.static)))
 
+	// When sessions are attached, wrap every route with the principal-injecting
+	// middleware so handlers (and whoami) can read the caller from context.
+	if s.sessions != nil {
+		return s.sessions.Middleware(mux)
+	}
 	return mux
 }
 

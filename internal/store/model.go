@@ -78,10 +78,13 @@ type GroupGrant struct {
 	Role      Role
 }
 
-// Session is a PostgreSQL-backed session. Only the token hash is persisted; the
-// raw token is returned once at creation and never stored.
+// Session is a PostgreSQL-backed session and a point-in-time snapshot of the
+// principal: the user plus the IdP groups asserted at login. Only the token
+// hash is persisted; the raw token is returned once at creation and never
+// stored.
 type Session struct {
 	UserID  string
+	Groups  []string
 	Expires time.Time
 	Created time.Time
 }

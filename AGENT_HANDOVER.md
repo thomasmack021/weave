@@ -1,7 +1,7 @@
 # Agent Handover: Weave IDP — v1 shipped
 
 *Last verified against the code 2026-07-07: `go build
-./...`, `go vet ./...`, `gofmt` clean; **107 test functions across 12 test-bearing
+./...`, `go vet ./...`, `gofmt` clean; **125 test functions across 13 test-bearing
 packages** (`go test ./...`), all passing, including the `internal/demo`
 end-to-end capstones; plus **3 testcontainers integration tests** under
 `-tags=integration` (`internal/store`, Docker required).
@@ -68,16 +68,24 @@ engine):
   seam. Also a "Set up the workspace" link on the catalog screen driving the
   Day 1 `/api/workspace` flow (asks only for the cloud project ID — never
   the Terraform state prefix).
-- `internal/store` — **Gate 1 foundation (2026-07-07), not yet wired to any
-  endpoint.** The multi-tenant RBAC + sessions persistence layer per
-  `DESIGN.md`: entities (`User`, `UseCase`, `Membership`, `GroupGrant`,
-  `Session`), the pure hybrid `EffectiveRole` decision, the `Store` interface
-  + `PostgresStore` (`pgx/v5`), embedded `golang-migrate` migrations
-  (`Migrate`), and a `CredentialStore` seam (`StaticCredentialStore` today).
-  Unit-tested without a DB; `PostgresStore` covered by testcontainers
-  integration tests behind `//go:build integration`
-  (`go test -tags=integration ./internal/store/`). The live server still uses
-  its v1 single-tenant config path — enforcement is the next increment.
+- `internal/store` — **Gate 1 foundation (2026-07-07).** The multi-tenant
+  RBAC + sessions persistence layer per `DESIGN.md`: entities (`User`,
+  `UseCase`, `Membership`, `GroupGrant`, `Session`), the pure hybrid
+  `EffectiveRole` decision, the `Store` interface + `PostgresStore`
+  (`pgx/v5`), embedded `golang-migrate` migrations (`Migrate`, incl. `0002`
+  adding session group-snapshots), `ResolvePrincipal`, and a `CredentialStore`
+  seam (`StaticCredentialStore` today). Unit-tested without a DB;
+  `PostgresStore` covered by testcontainers integration tests behind
+  `//go:build integration` (`go test -tags=integration ./internal/store/`).
+- `internal/auth` — **Gate 1 increment 2 (2026-07-07).** Identity + sessions
+  on the HTTP boundary: the pluggable `Authenticator` (`HeaderAuthenticator`
+  for the proxy/Entra path, `StaticAuthenticator` for solo dev) → a
+  `store.Principal`; `auth.Service` issuing/verifying PostgreSQL sessions
+  (`/api/session` login/whoami/logout) with a principal-injecting
+  `Middleware`. Attached to the server via opt-in
+  `(*server.Server).WithSessions`; wired in `cmd/weaved` behind
+  `WEAVE_AUTH_MODE` + `WEAVE_DATABASE_URL` (migrations on boot). **Not yet
+  enforcing** which use cases a principal may act on — that is increment 3.
 - `internal/demo` — zero-config local environment (bare workspace repo seeded
   by the real `domain.Scaffold`, example choice-bearing `spec.yaml`, fake
   in-process Bitbucket serving PR pages) behind `weaved -demo`; its e2e tests
@@ -107,17 +115,17 @@ engine):
 What does **not** exist yet (the post-v1 roadmap; items marked ✅ APPROVED
 were green-lit by the user on 2026-07-07 — see HANDOFF.md):
 
-- 🚧 IN PROGRESS — PostgreSQL sessions + multi-tenant use-case RBAC. The
-  **persistence foundation is DONE** (`internal/store`; see `DESIGN.md`).
-  Remaining increments: (2) the `Authenticator` middleware (proxy-header +
-  static backends) + session issue/verify on the HTTP boundary; (3)
-  use-case-scoped `/api/*` endpoints + orchestrator resolving per-use-case
-  repo config & credentials from the `Store`/`CredentialStore` + RBAC checks +
-  admin management endpoints. Decisions locked in `DESIGN.md`: proxy-header
-  identity (Entra), hybrid authz (DB members OR Entra group grants),
-  per-use-case config + credentials.
-- Authentication / SSO (the proxy-header `Authenticator` above is the first
-  half; full SSO/session UX follows).
+- 🚧 IN PROGRESS — PostgreSQL sessions + multi-tenant use-case RBAC.
+  **Increments 1 (persistence foundation, `internal/store`) and 2 (identity +
+  sessions, `internal/auth`) are DONE** (see `DESIGN.md`). Remaining:
+  increment (3) use-case-scoped `/api/*` endpoints + orchestrator resolving
+  per-use-case repo config & credentials from the `Store`/`CredentialStore` +
+  RBAC checks (`EffectiveRole`) + admin management endpoints + a
+  bootstrap-admin mechanism + a wizard use-case selector. Decisions locked in
+  `DESIGN.md`: proxy-header identity (Entra), hybrid authz (DB members OR
+  Entra group grants), per-use-case config + credentials.
+- Full SSO/session UX polish (the proxy-header `Authenticator` + PostgreSQL
+  sessions are in; a login page / richer whoami UI could follow).
 - Git/HTTP-backed dynamic module registry (same `ModuleRegistry` interface,
   remote source).
 - ✅ DONE (2026-07-07) — Bitbucket Server/DC, GitHub, GitLab PR providers

@@ -42,12 +42,14 @@ type Store interface {
 	// hybrid rule. ok is false when the principal has no access.
 	EffectiveRole(ctx context.Context, useCaseID string, p Principal) (role Role, ok bool, err error)
 
-	// CreateSession mints a session for userID valid for ttl, returning the raw
-	// token once (only its hash is stored).
-	CreateSession(ctx context.Context, userID string, ttl time.Duration) (rawToken string, s Session, err error)
-	// GetSession returns the session for a raw token, or ErrSessionInvalid if it
-	// is unknown or expired.
-	GetSession(ctx context.Context, rawToken string) (Session, error)
+	// CreateSession mints a session for userID valid for ttl, snapshotting the
+	// principal's groups, and returns the raw token once (only its hash is
+	// stored).
+	CreateSession(ctx context.Context, userID string, groups []string, ttl time.Duration) (rawToken string, s Session, err error)
+	// ResolvePrincipal reconstructs the full principal (subject + snapshotted
+	// groups) for a raw session token, or ErrSessionInvalid if it is unknown or
+	// expired.
+	ResolvePrincipal(ctx context.Context, rawToken string) (Principal, error)
 	// DeleteSession revokes a session by its raw token (idempotent).
 	DeleteSession(ctx context.Context, rawToken string) error
 
@@ -236,37 +238,47 @@ func (s *PostgresStore) EffectiveRole(ctx context.Context, useCaseID string, p P
 	return role, ok, nil
 }
 
-func (s *PostgresStore) CreateSession(ctx context.Context, userID string, ttl time.Duration) (string, Session, error) {
+func (s *PostgresStore) CreateSession(ctx context.Context, userID string, groups []string, ttl time.Duration) (string, Session, error) {
 	raw, err := newToken()
 	if err != nil {
 		return "", Session{}, err
 	}
+	if groups == nil {
+		groups = []string{}
+	}
 	expires := time.Now().Add(ttl)
 	const q = `
-		INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, $3)
-		RETURNING user_id, expires_at, created_at`
+		INSERT INTO sessions (token_hash, user_id, groups, expires_at) VALUES ($1, $2, $3, $4)
+		RETURNING user_id, groups, expires_at, created_at`
 	var sess Session
-	if err := s.pool.QueryRow(ctx, q, HashSessionToken(raw), userID, expires).
-		Scan(&sess.UserID, &sess.Expires, &sess.Created); err != nil {
+	if err := s.pool.QueryRow(ctx, q, HashSessionToken(raw), userID, groups, expires).
+		Scan(&sess.UserID, &sess.Groups, &sess.Expires, &sess.Created); err != nil {
 		return "", Session{}, fmt.Errorf("store: creating session: %w", err)
 	}
 	return raw, sess, nil
 }
 
-func (s *PostgresStore) GetSession(ctx context.Context, rawToken string) (Session, error) {
-	const q = `SELECT user_id, expires_at, created_at FROM sessions WHERE token_hash = $1`
-	var sess Session
-	err := s.pool.QueryRow(ctx, q, HashSessionToken(rawToken)).Scan(&sess.UserID, &sess.Expires, &sess.Created)
+func (s *PostgresStore) ResolvePrincipal(ctx context.Context, rawToken string) (Principal, error) {
+	const q = `
+		SELECT u.subject, s.groups, s.expires_at
+		FROM sessions s JOIN users u ON u.id = s.user_id
+		WHERE s.token_hash = $1`
+	var (
+		subject string
+		groups  []string
+		expires time.Time
+	)
+	err := s.pool.QueryRow(ctx, q, HashSessionToken(rawToken)).Scan(&subject, &groups, &expires)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Session{}, ErrSessionInvalid
+		return Principal{}, ErrSessionInvalid
 	}
 	if err != nil {
-		return Session{}, fmt.Errorf("store: getting session: %w", err)
+		return Principal{}, fmt.Errorf("store: resolving session principal: %w", err)
 	}
-	if !sess.Expires.After(time.Now()) {
-		return Session{}, ErrSessionInvalid
+	if !expires.After(time.Now()) {
+		return Principal{}, ErrSessionInvalid
 	}
-	return sess, nil
+	return Principal{Subject: subject, Groups: groups}, nil
 }
 
 func (s *PostgresStore) DeleteSession(ctx context.Context, rawToken string) error {

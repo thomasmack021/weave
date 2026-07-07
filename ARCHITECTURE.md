@@ -186,13 +186,22 @@ browser.
      ordering, and token hashing; and testcontainers integration tests for
      `PostgresStore` behind `//go:build integration`
      (`go test -tags=integration ./internal/store/`, Docker required).
-   - **[TARGET] — not yet wired to any endpoint.** The live server still uses
-     the v1 single-tenant global config. Remaining: an `Authenticator`
-     middleware (trusted proxy header → `Principal`, plus a static dev
-     backend), session issue/verify on the HTTP boundary, and use-case-scoped
-     endpoints where the orchestrator resolves per-use-case repo config +
-     credentials from the `Store`/`CredentialStore` under an RBAC check. The
-     request selects a use-case *key*; its config and credentials come from
+   - **Identity + sessions (`internal/auth`) — done (increment 2).** A
+     pluggable `Authenticator` turns a request into a `store.Principal`:
+     `HeaderAuthenticator` (trusted proxy headers — the Entra/oauth2-proxy
+     path) or `StaticAuthenticator` (solo-dev). `auth.Service` issues/verifies
+     PostgreSQL sessions (`/api/session` login/whoami/logout) and exposes a
+     `Middleware` that injects the principal into request context (session
+     cookie first, then the Authenticator). Attached opt-in via
+     `(*Server).WithSessions`; wired in `cmd/weaved` behind `WEAVE_AUTH_MODE` +
+     `WEAVE_DATABASE_URL` (migrations on boot). Off ⇒ the v1 / demo paths are
+     byte-for-byte unchanged.
+   - **[TARGET] — enforcement (increment 3).** The business endpoints are not
+     yet use-case-scoped: identity is established but not used to gate
+     scaffolding. Remaining: the orchestrator resolves per-use-case repo config
+     + credentials from the `Store`/`CredentialStore` under an RBAC check
+     (`EffectiveRole`), admin management endpoints, and a bootstrap-admin. The
+     request will select a use-case *key*; its config and credentials come from
      the DB (invariant 4 / "config never from the request" preserved).
 
 7. **Entrypoint (`cmd/weaved`) — complete, tested**

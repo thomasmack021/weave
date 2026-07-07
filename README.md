@@ -180,16 +180,35 @@ Further reading:
 - [`PHASE0_AUDIT.md`](./PHASE0_AUDIT.md) — the product & workflow audit behind the design
 - `.claude/skills/` — onboarding skills for AI coding agents working on Weave
 
+## Identity & sessions (optional, opt-in)
+
+Off by default — the v1 single-tenant and demo paths need no database. Set
+`WEAVE_AUTH_MODE` (and `WEAVE_DATABASE_URL`) to turn on PostgreSQL-backed
+identity + sessions:
+
+| Setting | Env | Notes |
+|---|---|---|
+| Auth mode | `WEAVE_AUTH_MODE` | `header` (trusted SSO proxy) or `static` (solo dev); empty = off |
+| Database | `WEAVE_DATABASE_URL` | Postgres DSN; migrations apply on boot. Required when auth is on |
+| Identity header | `WEAVE_AUTH_SUBJECT_HEADER` | default `X-Forwarded-Email` (header mode) |
+| Groups header | `WEAVE_AUTH_GROUPS_HEADER` | default `X-Forwarded-Groups` (header mode) |
+| Dev identity | `WEAVE_DEV_SUBJECT` / `WEAVE_DEV_GROUPS` | the fixed principal for `static` mode |
+| Session TTL | `WEAVE_SESSION_TTL` | Go duration, default `12h` |
+
+`GET/POST/DELETE /api/session` is whoami / login / logout. In `header` mode an
+SSO proxy (oauth2-proxy, Azure App Proxy → Entra ID) forwards the verified
+identity + groups; Weave never handles credentials. RBAC enforcement on the
+scaffold endpoints is the next increment — see [DESIGN.md](DESIGN.md).
+
 ## Roadmap
 
-- Multi-tenant use-case RBAC + PostgreSQL sessions — **foundation landed**
-  (`internal/store`; see [DESIGN.md](DESIGN.md)); identity middleware and
-  endpoint enforcement next
-- Authentication / SSO (trusted proxy header → Entra ID; solo-dev mode)
+- Multi-tenant use-case RBAC — **foundation + identity/sessions landed**
+  (`internal/store`, `internal/auth`); per-use-case endpoint enforcement next
+- Full SSO/session UX polish
 - Git/HTTP-backed dynamic module registry (specs fetched from the platform repo)
 - Per-request attribution in commits and PR bodies
 
-Shipped since v1.0.0: **Day-1 workspace scaffolding via the API**
-(`POST /api/workspace`); **GitHub, GitLab, and Bitbucket Server/DC PR
-providers** (`WEAVE_PR_PROVIDER`) alongside the original Bitbucket Cloud; the
-**multi-tenant RBAC persistence foundation** (`internal/store`).
+Shipped since v1.0.0: **Day-1 workspace scaffolding** (`POST /api/workspace`);
+**GitHub, GitLab, Bitbucket Server/DC PR providers** (`WEAVE_PR_PROVIDER`); the
+**multi-tenant RBAC persistence foundation** (`internal/store`); **identity +
+PostgreSQL sessions** (`internal/auth`, `WEAVE_AUTH_MODE`).

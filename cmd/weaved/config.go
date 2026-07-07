@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 )
 
 // config carries every runtime setting for the weaved binary. Each field is
@@ -22,7 +23,21 @@ type config struct {
 	PRProvider   string // -pr-provider / WEAVE_PR_PROVIDER, default "bitbucket-cloud"; one of bitbucket-cloud|github|gitlab|bitbucket-server
 	BitbucketAPI string // -pr-api / WEAVE_PR_API (or legacy WEAVE_BITBUCKET_API): PR API base URL. Defaulted per provider when unset; required for bitbucket-server (no public host)
 	Demo         bool   // -demo: run a self-contained local demo; all required settings are synthesized
+
+	// Identity & sessions (Gate 1 increment 2). Auth is off unless AuthMode is
+	// set; when set it requires a database. All optional in v1 / demo runs.
+	DatabaseURL       string        // WEAVE_DATABASE_URL: Postgres DSN for sessions/RBAC
+	AuthMode          string        // WEAVE_AUTH_MODE: ""(off) | "header" | "static"
+	AuthSubjectHeader string        // WEAVE_AUTH_SUBJECT_HEADER, default "X-Forwarded-Email"
+	AuthGroupsHeader  string        // WEAVE_AUTH_GROUPS_HEADER, default "X-Forwarded-Groups"
+	DevSubject        string        // WEAVE_DEV_SUBJECT: identity for auth-mode "static"
+	DevGroups         []string      // WEAVE_DEV_GROUPS: comma-separated groups for "static"
+	SessionTTL        time.Duration // WEAVE_SESSION_TTL, default 12h
+	SecureCookies     bool          // WEAVE_SECURE_COOKIES: mark session cookies Secure
 }
+
+// knownAuthModes is the set of accepted WEAVE_AUTH_MODE values ("" means off).
+var knownAuthModes = map[string]bool{"": true, "header": true, "static": true}
 
 // knownPRProviders maps each selectable provider to its default API base URL.
 // An empty default (bitbucket-server) means the operator must supply one — a
@@ -70,8 +85,33 @@ func loadConfig(args []string, getenv func(string) string) (config, error) {
 	fs.StringVar(&cfg.BitbucketAPI, "pr-api", firstEnv("WEAVE_PR_API", "WEAVE_BITBUCKET_API", ""), "PR API base URL; defaulted per provider when unset")
 	fs.BoolVar(&cfg.Demo, "demo", false, "run a fully local, self-contained demo (no repo, token, or spec file needed)")
 
+	fs.StringVar(&cfg.DatabaseURL, "database-url", envOr("WEAVE_DATABASE_URL", ""), "PostgreSQL DSN for sessions/RBAC (required when auth is on)")
+	fs.StringVar(&cfg.AuthMode, "auth-mode", envOr("WEAVE_AUTH_MODE", ""), "identity source: \"\"(off)|header|static")
+	fs.StringVar(&cfg.AuthSubjectHeader, "auth-subject-header", envOr("WEAVE_AUTH_SUBJECT_HEADER", "X-Forwarded-Email"), "trusted header carrying the caller identity")
+	fs.StringVar(&cfg.AuthGroupsHeader, "auth-groups-header", envOr("WEAVE_AUTH_GROUPS_HEADER", "X-Forwarded-Groups"), "trusted header carrying the caller's IdP groups")
+	fs.StringVar(&cfg.DevSubject, "dev-subject", envOr("WEAVE_DEV_SUBJECT", ""), "identity used by auth-mode static (solo dev)")
+	sessionTTL := fs.String("session-ttl", envOr("WEAVE_SESSION_TTL", "12h"), "session lifetime (Go duration)")
+	fs.BoolVar(&cfg.SecureCookies, "secure-cookies", envOr("WEAVE_SECURE_COOKIES", "") == "true", "mark session cookies Secure (HTTPS only)")
+
 	if err := fs.Parse(args); err != nil {
 		return config{}, fmt.Errorf("weaved: parsing flags: %w", err)
+	}
+
+	if groups := envOr("WEAVE_DEV_GROUPS", ""); groups != "" {
+		for _, g := range strings.Split(groups, ",") {
+			if g = strings.TrimSpace(g); g != "" {
+				cfg.DevGroups = append(cfg.DevGroups, g)
+			}
+		}
+	}
+	ttl, err := time.ParseDuration(*sessionTTL)
+	if err != nil {
+		return config{}, fmt.Errorf("weaved: invalid WEAVE_SESSION_TTL %q: %w", *sessionTTL, err)
+	}
+	cfg.SessionTTL = ttl
+
+	if !knownAuthModes[cfg.AuthMode] {
+		return config{}, fmt.Errorf("weaved: unknown auth mode %q; set WEAVE_AUTH_MODE or -auth-mode to one of header, static (or leave empty to disable)", cfg.AuthMode)
 	}
 
 	// Validate the provider selection and, when the operator did not supply an
@@ -111,6 +151,13 @@ func loadConfig(args []string, getenv func(string) string) (config, error) {
 	// explicit base URL is required rather than defaulted.
 	if cfg.PRProvider == "bitbucket-server" && cfg.BitbucketAPI == "" {
 		errs = append(errs, fmt.Errorf("weaved: missing required config: bitbucket-server needs an explicit base URL — set WEAVE_PR_API or -pr-api"))
+	}
+	// Identity/sessions need a database; static identity needs a subject.
+	if cfg.AuthMode != "" && cfg.DatabaseURL == "" {
+		errs = append(errs, fmt.Errorf("weaved: missing required config: auth needs a database — set WEAVE_DATABASE_URL or -database-url"))
+	}
+	if cfg.AuthMode == "static" && cfg.DevSubject == "" {
+		errs = append(errs, fmt.Errorf("weaved: missing required config: auth-mode static needs an identity — set WEAVE_DEV_SUBJECT or -dev-subject"))
 	}
 	if len(errs) > 0 {
 		return config{}, errors.Join(errs...)

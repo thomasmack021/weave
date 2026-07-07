@@ -189,8 +189,10 @@ func TestPostgresStore_Sessions(t *testing.T) {
 		t.Fatalf("UpsertUser: %v", err)
 	}
 
-	// Valid session round-trips.
-	raw, sess, err := st.CreateSession(ctx, u.ID, time.Hour)
+	groups := []string{"platform-admins", "payments-devs"}
+
+	// Valid session round-trips, snapshotting the principal's groups.
+	raw, sess, err := st.CreateSession(ctx, u.ID, groups, time.Hour)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -200,33 +202,39 @@ func TestPostgresStore_Sessions(t *testing.T) {
 	if sess.UserID != u.ID {
 		t.Errorf("session UserID = %q, want %q", sess.UserID, u.ID)
 	}
-	got, err := st.GetSession(ctx, raw)
+
+	// ResolvePrincipal reconstructs the full principal (subject + groups) with
+	// no proxy headers — the point of a self-contained session.
+	p, err := st.ResolvePrincipal(ctx, raw)
 	if err != nil {
-		t.Fatalf("GetSession: %v", err)
+		t.Fatalf("ResolvePrincipal: %v", err)
 	}
-	if got.UserID != u.ID {
-		t.Errorf("GetSession UserID = %q, want %q", got.UserID, u.ID)
+	if p.Subject != "dev@acme.example" {
+		t.Errorf("principal subject = %q, want %q", p.Subject, "dev@acme.example")
+	}
+	if len(p.Groups) != 2 || p.Groups[0] != "platform-admins" || p.Groups[1] != "payments-devs" {
+		t.Errorf("principal groups = %v, want %v", p.Groups, groups)
 	}
 
 	// Unknown token is invalid.
-	if _, err := st.GetSession(ctx, "not-a-real-token"); !errors.Is(err, ErrSessionInvalid) {
-		t.Errorf("GetSession(unknown) error = %v, want ErrSessionInvalid", err)
+	if _, err := st.ResolvePrincipal(ctx, "not-a-real-token"); !errors.Is(err, ErrSessionInvalid) {
+		t.Errorf("ResolvePrincipal(unknown) error = %v, want ErrSessionInvalid", err)
 	}
 
 	// Deleting revokes it.
 	if err := st.DeleteSession(ctx, raw); err != nil {
 		t.Fatalf("DeleteSession: %v", err)
 	}
-	if _, err := st.GetSession(ctx, raw); !errors.Is(err, ErrSessionInvalid) {
-		t.Errorf("GetSession(deleted) error = %v, want ErrSessionInvalid", err)
+	if _, err := st.ResolvePrincipal(ctx, raw); !errors.Is(err, ErrSessionInvalid) {
+		t.Errorf("ResolvePrincipal(deleted) error = %v, want ErrSessionInvalid", err)
 	}
 
 	// An already-expired session is invalid.
-	expiredRaw, _, err := st.CreateSession(ctx, u.ID, -time.Minute)
+	expiredRaw, _, err := st.CreateSession(ctx, u.ID, nil, -time.Minute)
 	if err != nil {
 		t.Fatalf("CreateSession(expired): %v", err)
 	}
-	if _, err := st.GetSession(ctx, expiredRaw); !errors.Is(err, ErrSessionInvalid) {
-		t.Errorf("GetSession(expired) error = %v, want ErrSessionInvalid", err)
+	if _, err := st.ResolvePrincipal(ctx, expiredRaw); !errors.Is(err, ErrSessionInvalid) {
+		t.Errorf("ResolvePrincipal(expired) error = %v, want ErrSessionInvalid", err)
 	}
 }

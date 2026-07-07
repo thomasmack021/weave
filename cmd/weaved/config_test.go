@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // envMap returns a getenv func backed by a map, so tests never touch the real
@@ -268,5 +269,67 @@ func TestLoadConfigBitbucketServerRequiresAPI(t *testing.T) {
 	_, err := loadConfig(nil, envMap(env))
 	if err == nil {
 		t.Fatal("loadConfig() error = nil, want an error for bitbucket-server without an API base URL")
+	}
+}
+
+// TestLoadConfigAuthDefaultsOff pins the v1-compatible default: no auth mode,
+// no database, and a parsed default session TTL.
+func TestLoadConfigAuthDefaultsOff(t *testing.T) {
+	cfg, err := loadConfig(nil, envMap(requiredEnv()))
+	if err != nil {
+		t.Fatalf("loadConfig() error = %v, want nil", err)
+	}
+	if cfg.AuthMode != "" {
+		t.Errorf("AuthMode = %q, want empty (auth off by default)", cfg.AuthMode)
+	}
+	if cfg.SessionTTL != 12*time.Hour {
+		t.Errorf("SessionTTL = %v, want 12h default", cfg.SessionTTL)
+	}
+}
+
+// TestLoadConfigAuthModeRequiresDatabaseURL: sessions need a database.
+func TestLoadConfigAuthModeRequiresDatabaseURL(t *testing.T) {
+	env := requiredEnv()
+	env["WEAVE_AUTH_MODE"] = "header"
+	_, err := loadConfig(nil, envMap(env))
+	if err == nil || !strings.Contains(err.Error(), "WEAVE_DATABASE_URL") {
+		t.Fatalf("loadConfig() error = %v, want it to require WEAVE_DATABASE_URL", err)
+	}
+}
+
+// TestLoadConfigStaticAuthRequiresDevSubject: static identity needs a subject.
+func TestLoadConfigStaticAuthRequiresDevSubject(t *testing.T) {
+	env := requiredEnv()
+	env["WEAVE_AUTH_MODE"] = "static"
+	env["WEAVE_DATABASE_URL"] = "postgres://localhost/weave"
+	_, err := loadConfig(nil, envMap(env))
+	if err == nil || !strings.Contains(err.Error(), "WEAVE_DEV_SUBJECT") {
+		t.Fatalf("loadConfig() error = %v, want it to require WEAVE_DEV_SUBJECT", err)
+	}
+}
+
+// TestLoadConfigUnknownAuthMode rejects an unsupported auth mode at config time.
+func TestLoadConfigUnknownAuthMode(t *testing.T) {
+	env := requiredEnv()
+	env["WEAVE_AUTH_MODE"] = "kerberos"
+	env["WEAVE_DATABASE_URL"] = "postgres://localhost/weave"
+	_, err := loadConfig(nil, envMap(env))
+	if err == nil || !strings.Contains(err.Error(), "kerberos") {
+		t.Fatalf("loadConfig() error = %v, want it to reject the unknown auth mode", err)
+	}
+}
+
+// TestLoadConfigHeaderAuthDefaults: a valid header-auth config carries the
+// standard proxy header names by default.
+func TestLoadConfigHeaderAuthDefaults(t *testing.T) {
+	env := requiredEnv()
+	env["WEAVE_AUTH_MODE"] = "header"
+	env["WEAVE_DATABASE_URL"] = "postgres://localhost/weave"
+	cfg, err := loadConfig(nil, envMap(env))
+	if err != nil {
+		t.Fatalf("loadConfig() error = %v, want nil", err)
+	}
+	if cfg.AuthSubjectHeader != "X-Forwarded-Email" || cfg.AuthGroupsHeader != "X-Forwarded-Groups" {
+		t.Errorf("header defaults = %q/%q, want X-Forwarded-Email/X-Forwarded-Groups", cfg.AuthSubjectHeader, cfg.AuthGroupsHeader)
 	}
 }
