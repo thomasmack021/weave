@@ -7,8 +7,8 @@ import (
 	"io/fs"
 	"net/http"
 
-	"github.com/thomasmack/weave/internal/orchestrate"
-	"github.com/thomasmack/weave/internal/registry"
+	"github.com/thomasmack021/weave/internal/orchestrate"
+	"github.com/thomasmack021/weave/internal/registry"
 )
 
 // Scaffolder is the server's consumer-side view of the orchestration layer:

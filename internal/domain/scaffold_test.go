@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
-	"github.com/thomasmack/weave/internal/fs"
-	"github.com/thomasmack/weave/internal/registry"
+	"github.com/thomasmack021/weave/internal/fs"
+	"github.com/thomasmack021/weave/internal/registry"
 )
 
 // newTestService wires a Service over an in-memory filesystem and an empty fake

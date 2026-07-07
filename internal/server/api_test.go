@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thomasmack/weave/internal/orchestrate"
-	"github.com/thomasmack/weave/internal/registry"
-	"github.com/thomasmack/weave/internal/validate"
-	"github.com/thomasmack/weave/web"
+	"github.com/thomasmack021/weave/internal/orchestrate"
+	"github.com/thomasmack021/weave/internal/registry"
+	"github.com/thomasmack021/weave/internal/validate"
+	"github.com/thomasmack021/weave/web"
 )
 
 // Compile-time proof that the production orchestrator satisfies the

@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/thomasmack/weave/internal/hcl"
-	"github.com/thomasmack/weave/internal/pipeline"
+	"github.com/thomasmack021/weave/internal/hcl"
+	"github.com/thomasmack021/weave/internal/pipeline"
 	"github.com/zclconf/go-cty/cty"
 )
 

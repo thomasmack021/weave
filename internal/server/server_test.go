@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thomasmack/weave/web"
+	"github.com/thomasmack021/weave/web"
 )
 
 // TestHealthEndpointReturns200 is the Red-phase test for the GET /health

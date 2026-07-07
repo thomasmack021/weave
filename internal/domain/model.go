@@ -6,8 +6,8 @@ package domain
 import (
 	"strings"
 
-	"github.com/thomasmack/weave/internal/fs"
-	"github.com/thomasmack/weave/internal/registry"
+	"github.com/thomasmack021/weave/internal/fs"
+	"github.com/thomasmack021/weave/internal/registry"
 )
 
 // Service is the Day 1 / Day 2 orchestrator. It accepts interfaces for its I/O

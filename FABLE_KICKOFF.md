@@ -73,7 +73,7 @@ This project was a strict, test-driven CLI (Phases A–F) that was deliberately 
 Domain → I/O" so the engine is **ignorant of any interface**. That decoupling is the asset. The CLI
 shell has already been removed; a Web/API/DB/SPA shell is being built around the same engine.
 
-**Current state (Go module `github.com/thomasmack/weave`, 43 passing tests, `go build`/`go vet`
+**Current state (Go module `github.com/thomasmack021/weave`, 43 passing tests, `go build`/`go vet`
 clean):**
 
 | Package | Role | Status |

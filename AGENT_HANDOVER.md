@@ -81,18 +81,25 @@ engine):
   Cloud REST shape — Bitbucket Server/DC would need its own
   `PullRequestProvider` behind the existing interface.
 
-What does **not** exist yet (the post-v1 roadmap, in rough priority order):
+What does **not** exist yet (the post-v1 roadmap; items marked ✅ APPROVED
+were green-lit by the user on 2026-07-07 — see HANDOFF.md):
 
-- PostgreSQL sessions + use-case RBAC (`pgx`, `golang-migrate`,
+- ✅ APPROVED — PostgreSQL sessions + use-case RBAC (`pgx`, `golang-migrate`,
   testcontainers for integration tests) — the next major gate.
 - Authentication / SSO.
 - Git/HTTP-backed dynamic module registry (same `ModuleRegistry` interface,
   remote source).
-- Bitbucket Server/DC, GitHub, GitLab PR providers (new implementations of
-  `git.PullRequestProvider`).
-- Day-1 workspace scaffolding via the API (v1 assumes
+- ✅ APPROVED — Bitbucket Server/DC, GitHub, GitLab PR providers (new
+  implementations of `git.PullRequestProvider`).
+- ✅ APPROVED — Day-1 workspace scaffolding via the API (v1 assumes
   `terraform/env/<env>/` exists in the target repo).
 - Per-request attribution in commits/PR bodies + token rotation.
+
+**Deployment model context (from the user, 2026-07-07):** the target repo is
+a CD-pipeline repo watched by a GitOps operator (ArgoCD at the user's
+company) — merge triggers apply. Admins onboard the module source repos;
+developers are scoped to their use cases. Design RBAC and the future dynamic
+registry around that: use case ↔ target repo, admin-managed module sources.
 
 ## The plan (approved; see PHASE0_AUDIT.md §4 for rationale)
 

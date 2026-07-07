@@ -5,9 +5,9 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/thomasmack/weave/internal/orchestrate"
-	"github.com/thomasmack/weave/internal/registry"
-	"github.com/thomasmack/weave/internal/validate"
+	"github.com/thomasmack021/weave/internal/orchestrate"
+	"github.com/thomasmack021/weave/internal/registry"
+	"github.com/thomasmack021/weave/internal/validate"
 )
 
 // moduleDTO is the client-facing projection of a registry.ModuleSpec. It is a

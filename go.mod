@@ -1,4 +1,4 @@
-module github.com/thomasmack/weave
+module github.com/thomasmack021/weave
 
 go 1.21
 

@@ -2,7 +2,7 @@ package hcl
 
 import (
 	"github.com/hashicorp/hcl/v2"
-	"github.com/thomasmack/weave/internal/registry"
+	"github.com/thomasmack021/weave/internal/registry"
 	"github.com/zclconf/go-cty/cty"
 )
 

@@ -11,8 +11,8 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 
-	"github.com/thomasmack/weave/internal/git"
-	"github.com/thomasmack/weave/internal/registry"
+	"github.com/thomasmack021/weave/internal/git"
+	"github.com/thomasmack021/weave/internal/registry"
 )
 
 // fakePRProvider is a spy git.PullRequestProvider: it records every call so

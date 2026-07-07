@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/thomasmack/weave/internal/hcl"
-	"github.com/thomasmack/weave/internal/pipeline"
-	"github.com/thomasmack/weave/internal/validate"
+	"github.com/thomasmack021/weave/internal/hcl"
+	"github.com/thomasmack021/weave/internal/pipeline"
+	"github.com/thomasmack021/weave/internal/validate"
 )
 
 // AddResource performs a Day 2 resource addition: it resolves the module from

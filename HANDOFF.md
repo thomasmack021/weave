@@ -9,26 +9,28 @@
 > its gate — and (5) rewrite this file before ending the turn. Do not trust
 > any other doc over this one for turn-level state.
 
-## Verified state (2026-07-06, end of the v1 ship session)
+## Verified state (2026-07-06, independently re-verified by a fresh session)
 
-- **Weave v1 is SHIPPED.** `go build ./...`, `go vet ./...`, `gofmt -l
-  internal cmd web` all clean; `go test ./... -count=1`: **all 11
+- **Weave v1 is SHIPPED**, and a fresh session re-ran the full
+  `weave-verify` playbook from scratch: `go build ./...`, `go vet ./...`,
+  `gofmt -l internal cmd web` all clean; `go test ./... -count=1`: **all 11
   test-bearing packages ok, 79 test functions** (domain, fs, git, hcl,
   orchestrate, pipeline, registry, server, validate, demo, cmd/weaved;
-  `web` has no tests).
+  `web` has no tests) — exactly matching the state recorded at ship time.
 - The `internal/demo` **end-to-end capstone** passes: production graph
   assembled exactly as `cmd/weaved` does, driven through the real HTTP API —
   fail-before-mutate proven (422 ⇒ zero new remote branches) and the happy
   path proven (choice expansion in the pushed branch's tfvars, PR URL serves
   a page, no virtual-key leakage).
-- Live smoke of the actual binary (`weaved -demo`) verified: /health 200,
-  wizard served, catalog with t-shirt labels, 422 on invalid size, 201 with
-  working PR URL for both demo modules.
-- The repository is now a **git repository** (initialized this session,
-  branch `main`), with the v1.0.0 commit as its root. No remote is
-  configured — pushing to GitHub/Bitbucket is the user's call.
+- Live smoke of the actual binary (`weaved -demo`, rebuilt fresh) verified:
+  /health 200, wizard served (`<title>Weave` present), catalog contains
+  `cloud-run`, 422 on unknown size `galactic`, 201 with
+  `{branch: weave/add-smoke-test, prUrl}` whose PR page itself serves 200.
+- Git state: branch `main`, working tree **clean**, single root commit
+  `4aeb719` tagged **v1.0.0**. No remote is configured — pushing to
+  GitHub/Bitbucket is the user's call.
 
-## What shipped in v1 (this session)
+## What shipped in v1 (the ship session, 2026-07-06)
 
 1. **Phase 2 completed** (steps 3+4 after the earlier 1+2):
    - Step 3 — domain e2e choice test
@@ -68,21 +70,35 @@ for this session ("ship version 1 … end2end is the main goal"); red→green
 TDD was still followed within each step (reds shown for server DTO/status
 work; the domain test's immediate pass was itself the specified proof).
 
-## Next steps — the post-v1 roadmap (each gets its own gate; no approvals given)
+## Next steps — approved gates (user decision, 2026-07-07 session)
 
-In rough priority order (see AGENT_HANDOVER "does not exist yet"):
+The user explicitly approved these four work items (in the agent's chosen
+execution order; each still gets red-first TDD and honest verification):
 
-1. **PostgreSQL sessions + use-case RBAC** — `pgx`, `golang-migrate`,
-   testcontainers; developers see only their projects. The next major gate.
-2. Authentication / SSO.
-3. Git/HTTP-backed dynamic registry (same `ModuleRegistry` interface).
-4. Additional PR providers (Bitbucket Server/DC, GitHub, GitLab) behind
-   `git.PullRequestProvider`.
-5. Day-1 workspace scaffolding via the API.
-6. Per-request attribution in commits/PR bodies; token rotation.
+1. **Publish to GitHub** — done in this session: module renamed to
+   `github.com/thomasmack021/weave` (matches the GitHub account so
+   `go install .../cmd/weaved@latest` works), public repo, `main` +
+   `v1.0.0` tag pushed.
+2. **Day-1 workspace scaffolding via the API** — bootstrap
+   `terraform/env/<env>/` in the target repo through the same
+   fail-before-mutate PR loop.
+3. **Additional PR providers** — GitHub, GitLab, Bitbucket Server/DC behind
+   `git.PullRequestProvider`; selection via server config, never the request.
+4. **PostgreSQL sessions + use-case RBAC** — `pgx`, `golang-migrate`,
+   testcontainers (Docker verified available); developers see only their
+   use cases.
 
-Also open (small): pushing this repo to a public remote (user decision);
-optionally tagging releases beyond the root commit.
+**Product context from the user (shapes the RBAC/registry data model):**
+admins onboard the source repos that contain the IaC modules; developers
+use Weave to scaffold those modules into their CD-pipeline repo; a GitOps
+operator (ArgoCD at the user's company) watches that repo and applies after
+merge. So "CI applies after review" generalizes to GitOps pull-based
+deployment, and the future data model is: use case ↔ target repo
+(ArgoCD-watched), admin-onboarded module source repos, developers scoped to
+their use cases.
+
+Still open, not approved: Authentication/SSO; Git/HTTP-backed dynamic
+registry; per-request attribution + token rotation.
 
 ## Standing working agreement (unchanged)
 

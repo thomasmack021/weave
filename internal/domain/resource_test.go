@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
-	"github.com/thomasmack/weave/internal/fs"
-	"github.com/thomasmack/weave/internal/registry"
+	"github.com/thomasmack021/weave/internal/fs"
+	"github.com/thomasmack021/weave/internal/registry"
 )
 
 // cloudRunSpec is a minimal cloud-run module spec with a single input whose

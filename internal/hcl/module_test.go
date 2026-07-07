@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/thomasmack/weave/internal/registry"
+	"github.com/thomasmack021/weave/internal/registry"
 	"github.com/zclconf/go-cty/cty"
 )
 

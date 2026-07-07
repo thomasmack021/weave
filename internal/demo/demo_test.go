@@ -13,12 +13,12 @@ import (
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 
-	"github.com/thomasmack/weave/internal/demo"
-	"github.com/thomasmack/weave/internal/git"
-	"github.com/thomasmack/weave/internal/orchestrate"
-	"github.com/thomasmack/weave/internal/registry"
-	"github.com/thomasmack/weave/internal/server"
-	"github.com/thomasmack/weave/web"
+	"github.com/thomasmack021/weave/internal/demo"
+	"github.com/thomasmack021/weave/internal/git"
+	"github.com/thomasmack021/weave/internal/orchestrate"
+	"github.com/thomasmack021/weave/internal/registry"
+	"github.com/thomasmack021/weave/internal/server"
+	"github.com/thomasmack021/weave/web"
 )
 
 // TestSetup_CreatesWorkingEnvironment asserts demo.Setup produces everything a

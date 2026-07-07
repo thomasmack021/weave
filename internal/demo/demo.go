@@ -26,10 +26,10 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/spf13/afero"
 
-	"github.com/thomasmack/weave/internal/domain"
-	"github.com/thomasmack/weave/internal/fs"
-	"github.com/thomasmack/weave/internal/git"
-	"github.com/thomasmack/weave/internal/registry"
+	"github.com/thomasmack021/weave/internal/domain"
+	"github.com/thomasmack021/weave/internal/fs"
+	"github.com/thomasmack021/weave/internal/git"
+	"github.com/thomasmack021/weave/internal/registry"
 )
 
 // specYAML is the demo module catalog: two golden modules, each with a
