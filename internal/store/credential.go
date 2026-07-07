@@ -19,6 +19,24 @@ type CredentialStore interface {
 	Resolve(ctx context.Context, ref string) (token string, err error)
 }
 
+// SharedCredentialStore returns one token for every use case — the model
+// where a central Weave uses a single platform service-account across all
+// target repos. Per-use-case secret resolution (encrypted column, cloud secret
+// manager) replaces this behind the same interface later.
+type SharedCredentialStore struct {
+	token string
+}
+
+// NewSharedCredentialStore builds a SharedCredentialStore around one token.
+func NewSharedCredentialStore(token string) *SharedCredentialStore {
+	return &SharedCredentialStore{token: token}
+}
+
+// Resolve returns the shared token for any reference.
+func (s *SharedCredentialStore) Resolve(context.Context, string) (string, error) {
+	return s.token, nil
+}
+
 // StaticCredentialStore is an in-memory CredentialStore for tests and
 // single-tenant deployments where credentials are supplied at boot.
 type StaticCredentialStore struct {

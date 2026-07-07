@@ -44,7 +44,8 @@ probably wrong.
 | `internal/orchestrate` | Fail-before-mutate composition: `Run` (Day 2) and `InitWorkspace` (Day 1) over a shared `publish` tail | The write path |
 | `internal/server` | HTTP API + embedded wizard serving; classification-only error mapping (`errors.Is`), no validation logic | API boundary |
 | `internal/store` | **Gate 1**: Postgres RBAC + sessions (`Store`/`PostgresStore`, `golang-migrate`, pure `EffectiveRole`, `ResolvePrincipal`, `CredentialStore`). See `DESIGN.md` | Foundation |
-| `internal/auth` | **Gate 1 increment 2**: `Authenticator` (header/static) → `store.Principal`; `auth.Service` sessions + middleware (`/api/session`); opt-in via `server.WithSessions`. NOT yet enforcing use-case access | Identity / not enforced |
+| `internal/auth` | **Gate 1 increment 2**: `Authenticator` (header/static) → `store.Principal`; `auth.Service` sessions + middleware (`/api/session`); opt-in via `server.WithSessions` | Identity |
+| `internal/usecase` | **Gate 1 increment 3**: multi-tenant dispatcher — resolve use case → `EffectiveRole` check (before orchestrating) → per-use-case orchestrator via `RunnerFactory`. `/api/usecases/*` opt-in via `server.WithUseCases`; `WEAVE_BOOTSTRAP_ADMINS` | Tenancy / RBAC enforcement |
 | `internal/demo` | Self-contained local demo env + THE e2e capstones (Day 1 + Day 2); never imported by production code | Test/demo only |
 | `cmd/weaved` | Assembly-only main + pure `loadConfig`; `newPRProvider` factory; `-demo` flag | Entrypoint |
 | `web/` | Single-file vanilla-JS wizard, embedded via `embed.FS`, no build step | Frontend |

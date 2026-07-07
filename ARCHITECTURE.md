@@ -196,13 +196,25 @@ browser.
      `(*Server).WithSessions`; wired in `cmd/weaved` behind `WEAVE_AUTH_MODE` +
      `WEAVE_DATABASE_URL` (migrations on boot). Off ⇒ the v1 / demo paths are
      byte-for-byte unchanged.
-   - **[TARGET] — enforcement (increment 3).** The business endpoints are not
-     yet use-case-scoped: identity is established but not used to gate
-     scaffolding. Remaining: the orchestrator resolves per-use-case repo config
-     + credentials from the `Store`/`CredentialStore` under an RBAC check
-     (`EffectiveRole`), admin management endpoints, and a bootstrap-admin. The
-     request will select a use-case *key*; its config and credentials come from
-     the DB (invariant 4 / "config never from the request" preserved).
+   - **Enforcement (`internal/usecase`) — done (increment 3).** `usecase.Service`
+     resolves a use case from the store, checks the caller's role
+     (`store.EffectiveRole`, with a `WEAVE_BOOTSTRAP_ADMINS` global-admin
+     bypass) *before* any orchestrator is built, then dispatches via a
+     `RunnerFactory` — the production `OrchestratorFactory` resolves the
+     credential (`CredentialStore`) and PR provider (`git.NewProvider`) and
+     binds an `orchestrate.Orchestrator` to the use case's repo config. The
+     module registry stays shared; only the target repo + credentials are
+     per-tenant. Endpoints (opt-in via `(*Server).WithUseCases`): `GET
+     /api/usecases` (RBAC-filtered, tenant-safe DTO — never leaks repo URL or
+     credential ref), `POST /api/usecases/{key}/scaffold` + `/workspace`
+     (developer), admin `POST /api/usecases` + `/{key}/members` + `/{key}/groups`.
+     The request selects a use-case *key*; its config and credentials come from
+     the DB (invariant 4 / "config never from the request" preserved). Sentinels
+     map `ErrUseCaseNotFound`→404, `ErrForbidden`→403.
+   - **[TARGET] — follow-ups.** The wizard use-case selector; a real
+     per-use-case `CredentialStore` backend (encrypted column / secret
+     manager) replacing today's `SharedCredentialStore`; an optional
+     per-use-case module registry.
 
 7. **Entrypoint (`cmd/weaved`) — complete, tested**
    - First runnable binary. Config via flags/env with precedence

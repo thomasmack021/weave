@@ -13,11 +13,13 @@ gofmt -l internal cmd web        # must print nothing
 go test ./... -count=1
 ```
 
-Expected: every package `ok` (13 Go packages with tests + `web` with none):
+Expected: every package `ok` (14 Go packages with tests + `web` with none):
 auth, domain, fs, git, hcl, orchestrate, pipeline, registry, server, store,
-validate, demo, cmd/weaved. `internal/store`'s default run is its pure unit
-tests (RBAC decision, role ordering, token hashing); `internal/auth` covers
-the header/static authenticators and the session Service/middleware.
+usecase, validate, demo, cmd/weaved. `internal/store`'s default run is its
+pure unit tests (RBAC decision, role ordering, token hashing); `internal/auth`
+covers the authenticators + session Service/middleware; `internal/usecase`
+covers the multi-tenant RBAC dispatch (deny-before-orchestrate, global-admin
+bypass, admin management) with fakes.
 
 ## 1b. Store integration suite (when `internal/store` changed; Docker required)
 

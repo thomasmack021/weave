@@ -17,6 +17,7 @@ import (
 	"github.com/thomasmack021/weave/internal/registry"
 	"github.com/thomasmack021/weave/internal/server"
 	"github.com/thomasmack021/weave/internal/store"
+	"github.com/thomasmack021/weave/internal/usecase"
 	"github.com/thomasmack021/weave/web"
 )
 
@@ -60,7 +61,7 @@ func run(args []string, getenv func(string) string) error {
 	}
 
 	reg := registry.NewFileSource(cfg.Specs)
-	pr, err := newPRProvider(cfg)
+	pr, err := git.NewProvider(cfg.PRProvider, cfg.BitbucketAPI, cfg.Token)
 	if err != nil {
 		return err
 	}
@@ -73,16 +74,17 @@ func run(args []string, getenv func(string) string) error {
 	})
 	srv := server.New(web.Assets, reg, orch, orch)
 
-	// Identity & sessions (opt-in): when an auth mode is configured, open the
-	// database, apply migrations, and attach the session layer.
+	// Identity, sessions & multi-tenant RBAC (opt-in): when an auth mode is
+	// configured, open the database, apply migrations, and attach both the
+	// session layer and the use-case dispatcher.
 	if cfg.AuthMode != "" {
-		svc, closeStore, err := newSessionService(context.Background(), cfg)
+		sessions, useCases, closeStore, err := setupTenancy(context.Background(), cfg, reg)
 		if err != nil {
-			return fmt.Errorf("weaved: initializing sessions: %w", err)
+			return fmt.Errorf("weaved: initializing tenancy: %w", err)
 		}
 		defer closeStore()
-		srv = srv.WithSessions(svc)
-		log.Printf("weaved: sessions enabled (auth-mode=%s)", cfg.AuthMode)
+		srv = srv.WithSessions(sessions).WithUseCases(useCases)
+		log.Printf("weaved: multi-tenant mode enabled (auth-mode=%s, bootstrap-admins=%d)", cfg.AuthMode, len(cfg.BootstrapAdmins))
 	}
 
 	log.Printf("weaved listening on %s (specs=%s repo=%s env=%s provider=%s api=%s)",
@@ -93,17 +95,17 @@ func run(args []string, getenv func(string) string) error {
 	return nil
 }
 
-// newSessionService opens the database, applies migrations, and builds the
-// session Service with the configured authenticator. It returns a cleanup that
-// closes the pool.
-func newSessionService(ctx context.Context, cfg config) (*auth.Service, func(), error) {
+// setupTenancy opens the database, applies migrations, and builds the session
+// Service (identity) and the use-case dispatcher (multi-tenant RBAC), both
+// sharing one connection pool. It returns a cleanup that closes the pool.
+func setupTenancy(ctx context.Context, cfg config, reg registry.ModuleRegistry) (*auth.Service, *usecase.Service, func(), error) {
 	st, err := store.NewPostgresStore(ctx, cfg.DatabaseURL)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if err := store.Migrate(cfg.DatabaseURL); err != nil {
 		st.Close()
-		return nil, nil, fmt.Errorf("applying migrations: %w", err)
+		return nil, nil, nil, fmt.Errorf("applying migrations: %w", err)
 	}
 
 	var authr auth.Authenticator
@@ -113,25 +115,14 @@ func newSessionService(ctx context.Context, cfg config) (*auth.Service, func(), 
 	default: // "header"
 		authr = auth.NewHeaderAuthenticator(cfg.AuthSubjectHeader, cfg.AuthGroupsHeader, ",")
 	}
-	svc := auth.NewService(authr, st, cfg.SessionTTL)
-	svc.SetSecureCookies(cfg.SecureCookies)
-	return svc, st.Close, nil
-}
+	sessions := auth.NewService(authr, st, cfg.SessionTTL)
+	sessions.SetSecureCookies(cfg.SecureCookies)
 
-// newPRProvider builds the configured PullRequestProvider. The provider name is
-// already validated in loadConfig; the default case stays as defense in depth.
-// Assembly lives here in main, never in the provider packages.
-func newPRProvider(cfg config) (git.PullRequestProvider, error) {
-	switch cfg.PRProvider {
-	case "bitbucket-cloud":
-		return git.NewHTTPProvider(cfg.BitbucketAPI, nil, cfg.Token), nil
-	case "github":
-		return git.NewGitHubProvider(cfg.BitbucketAPI, nil, cfg.Token), nil
-	case "gitlab":
-		return git.NewGitLabProvider(cfg.BitbucketAPI, nil, cfg.Token), nil
-	case "bitbucket-server":
-		return git.NewBitbucketServerProvider(cfg.BitbucketAPI, nil, cfg.Token), nil
-	default:
-		return nil, fmt.Errorf("weaved: unknown PR provider %q", cfg.PRProvider)
-	}
+	// Per-use-case credentials: one platform service-account token for now
+	// (WEAVE_GIT_TOKEN), resolved through the CredentialStore seam.
+	creds := store.NewSharedCredentialStore(cfg.Token)
+	factory := usecase.NewOrchestratorFactory(reg, creds)
+	useCases := usecase.NewService(st, factory, cfg.BootstrapAdmins)
+
+	return sessions, useCases, st.Close, nil
 }

@@ -39,6 +39,9 @@ type Server struct {
 	// sessions is the optional identity/session layer. When nil (v1 / demo),
 	// the server serves anonymously with no /api/session endpoint.
 	sessions *auth.Service
+	// useCases is the optional multi-tenant dispatcher. When nil, only the
+	// single-tenant /api/scaffold + /api/workspace endpoints are served.
+	useCases UseCaseService
 }
 
 // New constructs a Server with the embedded static asset filesystem, the
@@ -54,6 +57,15 @@ func New(static fs.FS, reg registry.ModuleRegistry, scaffolder Scaffolder, initi
 // server for chaining.
 func (s *Server) WithSessions(svc *auth.Service) *Server {
 	s.sessions = svc
+	return s
+}
+
+// WithUseCases attaches the multi-tenant dispatcher: it mounts the
+// /api/usecases endpoints (list, scaffold, workspace, and admin management),
+// each gated by the caller's RBAC role. Requires WithSessions to inject the
+// principal. Opt-in; returns the server for chaining.
+func (s *Server) WithUseCases(svc UseCaseService) *Server {
+	s.useCases = svc
 	return s
 }
 
@@ -74,6 +86,17 @@ func (s *Server) Handler() http.Handler {
 	// Identity/session endpoints exist only when the session layer is attached.
 	if s.sessions != nil {
 		mux.HandleFunc("/api/session", s.sessions.HandleSession)
+	}
+
+	// Multi-tenant use-case endpoints (method + path-parameter patterns) exist
+	// only when the dispatcher is attached.
+	if s.useCases != nil {
+		mux.HandleFunc("GET /api/usecases", s.handleListUseCases)
+		mux.HandleFunc("POST /api/usecases", s.handleCreateUseCase)
+		mux.HandleFunc("POST /api/usecases/{key}/scaffold", s.handleUseCaseScaffold)
+		mux.HandleFunc("POST /api/usecases/{key}/workspace", s.handleUseCaseWorkspace)
+		mux.HandleFunc("POST /api/usecases/{key}/members", s.handleAddMember)
+		mux.HandleFunc("POST /api/usecases/{key}/groups", s.handleAddGroupGrant)
 	}
 
 	// Everything else is served from the embedded frontend asset tree. The

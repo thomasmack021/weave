@@ -197,18 +197,40 @@ identity + sessions:
 
 `GET/POST/DELETE /api/session` is whoami / login / logout. In `header` mode an
 SSO proxy (oauth2-proxy, Azure App Proxy → Entra ID) forwards the verified
-identity + groups; Weave never handles credentials. RBAC enforcement on the
-scaffold endpoints is the next increment — see [DESIGN.md](DESIGN.md).
+identity + groups; Weave never handles credentials.
+
+### Multi-tenant use cases (RBAC)
+
+With auth on, one Weave serves many target repos. A **use case** is a target
+CD-pipeline repo plus its provider config, onboarded by an admin; developers
+are scoped to the use cases they can reach (by direct membership or a forwarded
+IdP group — hybrid RBAC). `WEAVE_BOOTSTRAP_ADMINS` (subjects and/or group
+names) are global admins who onboard the first use cases.
+
+| Endpoint | Who | Purpose |
+|---|---|---|
+| `GET /api/usecases` | any member | list the use cases you can act on |
+| `POST /api/usecases/{key}/scaffold` | developer | add a service to that use case's repo |
+| `POST /api/usecases/{key}/workspace` | developer | Day-1 bootstrap that use case's repo |
+| `POST /api/usecases` | global admin | onboard a use case |
+| `POST /api/usecases/{key}/members` · `/groups` | use-case admin | grant a user / IdP group a role |
+
+Each action resolves the use case's repo config + credentials from the
+database and is RBAC-checked *before* any git operation. The request only ever
+names a use-case *key* — repo URLs and tokens never come from the client. See
+[DESIGN.md](DESIGN.md).
 
 ## Roadmap
 
-- Multi-tenant use-case RBAC — **foundation + identity/sessions landed**
-  (`internal/store`, `internal/auth`); per-use-case endpoint enforcement next
-- Full SSO/session UX polish
+- Wizard use-case selector (the multi-tenant API is complete; the UI still uses
+  the single-tenant flow)
+- Real per-use-case credential backend (encrypted column / cloud secret
+  manager) replacing the current single shared token
 - Git/HTTP-backed dynamic module registry (specs fetched from the platform repo)
 - Per-request attribution in commits and PR bodies
 
 Shipped since v1.0.0: **Day-1 workspace scaffolding** (`POST /api/workspace`);
-**GitHub, GitLab, Bitbucket Server/DC PR providers** (`WEAVE_PR_PROVIDER`); the
-**multi-tenant RBAC persistence foundation** (`internal/store`); **identity +
-PostgreSQL sessions** (`internal/auth`, `WEAVE_AUTH_MODE`).
+**GitHub, GitLab, Bitbucket Server/DC PR providers** (`WEAVE_PR_PROVIDER`);
+**identity + PostgreSQL sessions** (`internal/auth`, `WEAVE_AUTH_MODE`); and
+**multi-tenant use-case RBAC** (`internal/store`, `internal/usecase`,
+`/api/usecases`).

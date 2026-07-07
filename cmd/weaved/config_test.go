@@ -319,6 +319,19 @@ func TestLoadConfigUnknownAuthMode(t *testing.T) {
 	}
 }
 
+// TestLoadConfigBootstrapAdmins parses the comma-separated global-admin list.
+func TestLoadConfigBootstrapAdmins(t *testing.T) {
+	env := requiredEnv()
+	env["WEAVE_BOOTSTRAP_ADMINS"] = "boss@acme.example, platform-admins ,"
+	cfg, err := loadConfig(nil, envMap(env))
+	if err != nil {
+		t.Fatalf("loadConfig() error = %v, want nil", err)
+	}
+	if len(cfg.BootstrapAdmins) != 2 || cfg.BootstrapAdmins[0] != "boss@acme.example" || cfg.BootstrapAdmins[1] != "platform-admins" {
+		t.Errorf("BootstrapAdmins = %v, want [boss@acme.example platform-admins] (trimmed, empties dropped)", cfg.BootstrapAdmins)
+	}
+}
+
 // TestLoadConfigHeaderAuthDefaults: a valid header-auth config carries the
 // standard proxy header names by default.
 func TestLoadConfigHeaderAuthDefaults(t *testing.T) {

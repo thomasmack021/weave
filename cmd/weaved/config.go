@@ -7,6 +7,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"github.com/thomasmack021/weave/internal/git"
 )
 
 // config carries every runtime setting for the weaved binary. Each field is
@@ -34,20 +36,24 @@ type config struct {
 	DevGroups         []string      // WEAVE_DEV_GROUPS: comma-separated groups for "static"
 	SessionTTL        time.Duration // WEAVE_SESSION_TTL, default 12h
 	SecureCookies     bool          // WEAVE_SECURE_COOKIES: mark session cookies Secure
+	BootstrapAdmins   []string      // WEAVE_BOOTSTRAP_ADMINS: subjects/groups treated as global admin
 }
 
 // knownAuthModes is the set of accepted WEAVE_AUTH_MODE values ("" means off).
 var knownAuthModes = map[string]bool{"": true, "header": true, "static": true}
 
-// knownPRProviders maps each selectable provider to its default API base URL.
-// An empty default (bitbucket-server) means the operator must supply one — a
-// Data Center install has no public host to assume. The map is the single
-// source of truth for both validation and the base-URL default.
-var knownPRProviders = map[string]string{
-	"bitbucket-cloud":  "https://api.bitbucket.org",
-	"github":           "https://api.github.com",
-	"gitlab":           "https://gitlab.com",
-	"bitbucket-server": "",
+// splitList parses a comma-separated env value into trimmed, non-empty items.
+func splitList(v string) []string {
+	if v == "" {
+		return nil
+	}
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // loadConfig resolves the weaved configuration from flags and the injected
@@ -97,13 +103,8 @@ func loadConfig(args []string, getenv func(string) string) (config, error) {
 		return config{}, fmt.Errorf("weaved: parsing flags: %w", err)
 	}
 
-	if groups := envOr("WEAVE_DEV_GROUPS", ""); groups != "" {
-		for _, g := range strings.Split(groups, ",") {
-			if g = strings.TrimSpace(g); g != "" {
-				cfg.DevGroups = append(cfg.DevGroups, g)
-			}
-		}
-	}
+	cfg.DevGroups = splitList(envOr("WEAVE_DEV_GROUPS", ""))
+	cfg.BootstrapAdmins = splitList(envOr("WEAVE_BOOTSTRAP_ADMINS", ""))
 	ttl, err := time.ParseDuration(*sessionTTL)
 	if err != nil {
 		return config{}, fmt.Errorf("weaved: invalid WEAVE_SESSION_TTL %q: %w", *sessionTTL, err)
@@ -116,7 +117,7 @@ func loadConfig(args []string, getenv func(string) string) (config, error) {
 
 	// Validate the provider selection and, when the operator did not supply an
 	// API base URL, default it to the provider's public host.
-	defaultAPI, known := knownPRProviders[cfg.PRProvider]
+	defaultAPI, known := git.DefaultAPIBase(cfg.PRProvider)
 	if !known {
 		return config{}, fmt.Errorf("weaved: unknown PR provider %q; set WEAVE_PR_PROVIDER or -pr-provider to one of bitbucket-cloud, github, gitlab, bitbucket-server", cfg.PRProvider)
 	}

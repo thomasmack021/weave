@@ -1,9 +1,10 @@
 # DESIGN — Gate 1: PostgreSQL sessions + multi-tenant use-case RBAC
 
-Status: **increments 1–2 done, increment 3 pending** (2026-07-07). This
-document is the agreed architecture for the gate; the code lands incrementally
-(see §8). It is the source of truth for *why* the data model looks the way it
-does — turn-level state still lives in `HANDOFF.md`.
+Status: **increments 1–3 done; the wizard use-case selector is the last
+follow-up** (2026-07-07). This document is the agreed architecture for the
+gate; the code lands incrementally (see §8). It is the source of truth for
+*why* the data model looks the way it does — turn-level state still lives in
+`HANDOFF.md`.
 
 ## 1. Context & goal
 
@@ -140,15 +141,24 @@ the `use_case` row.
    hash, and a session snapshots the principal's groups (migration `0002`) so a
    cookie authenticates without proxy headers. **Not yet enforcing** which use
    cases a principal may act on — that is increment 3.
-3. **Next — enforcement:** `/api/catalog`, `/api/workspace`, `/api/scaffold`
-   become use-case-scoped; the orchestrator resolves per-use-case repo config
-   and credentials from the `Store` + `CredentialStore` instead of global
-   config; every action is RBAC-checked. Admin endpoints to manage use cases,
-   memberships, and group grants; a bootstrap-admin mechanism.
-
-Until increment 3 lands, the live server keeps its v1 single-tenant config path
-for the business endpoints — identity is established but not yet used to gate
-scaffolding.
+3. ✅ **Enforcement (`internal/usecase` + server):** a `usecase.Service`
+   resolves a use case from the store, checks the caller's role
+   (`store.EffectiveRole`, global-admin bypass), and dispatches to a
+   per-use-case orchestrator built by a `RunnerFactory` that resolves the
+   credential (`CredentialStore`) and provider (`git.NewProvider`) — the
+   registry stays shared, only the target repo + credentials are per-tenant.
+   RBAC runs *before* any orchestrator is built (fail-before-mutate extended
+   to tenancy). New endpoints: `GET /api/usecases` (RBAC-filtered, tenant-safe
+   DTO — no repo/credential leak), `POST /api/usecases/{key}/scaffold` and
+   `/workspace` (developer), and admin `POST /api/usecases`,
+   `/{key}/members`, `/{key}/groups`. Bootstrap admins
+   (`WEAVE_BOOTSTRAP_ADMINS`, subjects or groups) solve the first-admin
+   problem and may act on any use case. All opt-in via `server.WithUseCases`;
+   wired in `cmd/weaved`. Credentials use a `SharedCredentialStore` (one
+   platform token) for now.
+   - **Remaining follow-up:** the wizard use-case selector (the API is complete
+     and proven; the single-tenant `/api/scaffold` + `/api/workspace` and the
+     demo path are unchanged).
 
 ## 9. Invariants preserved
 

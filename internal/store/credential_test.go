@@ -6,6 +6,21 @@ import (
 	"testing"
 )
 
+func TestSharedCredentialStore(t *testing.T) {
+	cs := NewSharedCredentialStore("platform-bot-token")
+	// Any ref resolves to the one shared token — the "single service account
+	// for all target repos" model.
+	for _, ref := range []string{"", "ref-a", "sm://anything"} {
+		got, err := cs.Resolve(context.Background(), ref)
+		if err != nil {
+			t.Fatalf("Resolve(%q) error = %v, want nil", ref, err)
+		}
+		if got != "platform-bot-token" {
+			t.Errorf("Resolve(%q) = %q, want the shared token", ref, got)
+		}
+	}
+}
+
 func TestStaticCredentialStore(t *testing.T) {
 	cs := NewStaticCredentialStore(map[string]string{"ref-a": "token-a"})
 

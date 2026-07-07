@@ -1,7 +1,7 @@
 # Agent Handover: Weave IDP — v1 shipped
 
 *Last verified against the code 2026-07-07: `go build
-./...`, `go vet ./...`, `gofmt` clean; **125 test functions across 13 test-bearing
+./...`, `go vet ./...`, `gofmt` clean; **148 test functions across 14 test-bearing
 packages** (`go test ./...`), all passing, including the `internal/demo`
 end-to-end capstones; plus **3 testcontainers integration tests** under
 `-tags=integration` (`internal/store`, Docker required).
@@ -84,8 +84,18 @@ engine):
   (`/api/session` login/whoami/logout) with a principal-injecting
   `Middleware`. Attached to the server via opt-in
   `(*server.Server).WithSessions`; wired in `cmd/weaved` behind
-  `WEAVE_AUTH_MODE` + `WEAVE_DATABASE_URL` (migrations on boot). **Not yet
-  enforcing** which use cases a principal may act on — that is increment 3.
+  `WEAVE_AUTH_MODE` + `WEAVE_DATABASE_URL` (migrations on boot).
+- `internal/usecase` — **Gate 1 increment 3 (2026-07-07).** The multi-tenant
+  dispatcher: `usecase.Service` resolves a use case from the store, enforces
+  the caller's role (`store.EffectiveRole`, global-admin bypass) BEFORE any
+  orchestrator is built, then dispatches via a `RunnerFactory`
+  (`OrchestratorFactory` resolves the credential + `git.NewProvider` and
+  binds an `orchestrate.Orchestrator` to the use case's repo config).
+  Sentinels `ErrUseCaseNotFound` (→404) / `ErrForbidden` (→403). Server
+  endpoints (`GET /api/usecases`, `POST /api/usecases[/{key}/scaffold|
+  workspace|members|groups]`) attach opt-in via `server.WithUseCases`; wired
+  in `cmd/weaved` with `WEAVE_BOOTSTRAP_ADMINS`. Proven end-to-end vs real
+  Postgres. **Remaining:** the wizard use-case selector.
 - `internal/demo` — zero-config local environment (bare workspace repo seeded
   by the real `domain.Scaffold`, example choice-bearing `spec.yaml`, fake
   in-process Bitbucket serving PR pages) behind `weaved -demo`; its e2e tests
@@ -115,15 +125,15 @@ engine):
 What does **not** exist yet (the post-v1 roadmap; items marked ✅ APPROVED
 were green-lit by the user on 2026-07-07 — see HANDOFF.md):
 
-- 🚧 IN PROGRESS — PostgreSQL sessions + multi-tenant use-case RBAC.
-  **Increments 1 (persistence foundation, `internal/store`) and 2 (identity +
-  sessions, `internal/auth`) are DONE** (see `DESIGN.md`). Remaining:
-  increment (3) use-case-scoped `/api/*` endpoints + orchestrator resolving
-  per-use-case repo config & credentials from the `Store`/`CredentialStore` +
-  RBAC checks (`EffectiveRole`) + admin management endpoints + a
-  bootstrap-admin mechanism + a wizard use-case selector. Decisions locked in
-  `DESIGN.md`: proxy-header identity (Entra), hybrid authz (DB members OR
-  Entra group grants), per-use-case config + credentials.
+- ✅ MOSTLY DONE — PostgreSQL sessions + multi-tenant use-case RBAC.
+  **Increments 1 (foundation, `internal/store`), 2 (identity + sessions,
+  `internal/auth`), and 3 (enforcement, `internal/usecase` + server) are
+  DONE** (see `DESIGN.md`), all proven end-to-end vs real Postgres. Decisions
+  locked in `DESIGN.md`: proxy-header identity (Entra), hybrid authz (DB
+  members OR Entra group grants), per-use-case config + credentials.
+  **Remaining:** the wizard use-case selector (frontend); a real per-use-case
+  `CredentialStore` backend (encrypted column / secret manager) replacing the
+  current `SharedCredentialStore`; an optional per-use-case module registry.
 - Full SSO/session UX polish (the proxy-header `Authenticator` + PostgreSQL
   sessions are in; a login page / richer whoami UI could follow).
 - Git/HTTP-backed dynamic module registry (same `ModuleRegistry` interface,
