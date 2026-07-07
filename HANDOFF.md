@@ -12,12 +12,12 @@
 ## Verified state (2026-07-07, post-v1 session in progress)
 
 - **Weave v1 is SHIPPED and PUBLISHED**, now on
-  `github.com/thomasmack021/weave` (public), and two post-v1 gates are done
-  (publish + Day-1 workspace scaffolding). Full `weave-verify` playbook green:
-  `go build ./...`, `go vet ./...`, `gofmt -l internal cmd web` all clean;
-  `go test ./... -count=1`: **all 11 test-bearing packages ok, 91 test
-  functions** (was 79 at ship; +12 for Day-1 init: 4 orchestrate + 7 server +
-  1 demo e2e).
+  `github.com/thomasmack021/weave` (public), and three post-v1 gates are done
+  (publish + Day-1 workspace scaffolding + multi-provider PRs). Full
+  `weave-verify` playbook green: `go build ./...`, `go vet ./...`,
+  `gofmt -l internal cmd web` all clean; `go test ./... -count=1`: **all 11
+  test-bearing packages ok, 102 test functions** (79 at ship; +12 Day-1 init;
+  +11 PR providers: 5 provider + 6 config).
 - The `internal/demo` **end-to-end capstones** pass: `TestEndToEnd_DemoLoop`
   (Day 2) and the new `TestEndToEnd_WorkspaceInit` (Day 1) both drive the real
   production graph through the real HTTP API — fail-before-mutate proven
@@ -92,12 +92,16 @@ execution order; each still gets red-first TDD and honest verification):
    omitted so the developer never sees Terraform plumbing). Wizard gained a
    "Set up the workspace" link. All red-first; proven e2e by
    `demo.TestEndToEnd_WorkspaceInit` and the live browser wizard.
-3. **Additional PR providers** — GitHub, GitLab, Bitbucket Server/DC behind
-   `git.PullRequestProvider`; selection via server config, never the request.
-   **← NEXT.**
+3. ✅ **DONE — Additional PR providers**: `GitHubProvider`, `GitLabProvider`,
+   `BitbucketServerProvider` join the Bitbucket Cloud `HTTPProvider`, all over
+   a shared `postPRJSON` spine. Selection via `WEAVE_PR_PROVIDER` (validated
+   at config time; `newPRProvider` factory in `main`), never the request.
+   Provider-aware `WEAVE_PR_API` defaults; legacy `WEAVE_BITBUCKET_*` env vars
+   still accepted. All red-first (httptest fakes per provider).
 4. **PostgreSQL sessions + use-case RBAC** — `pgx`, `golang-migrate`,
    testcontainers (Docker verified available); developers see only their
-   use cases.
+   use cases. **← NEXT** — this is a GATE; the next session should confirm
+   scope with the user before building (schema/identity decisions below).
 
 **Product context from the user (shapes the RBAC/registry data model):**
 admins onboard the source repos that contain the IaC modules; developers

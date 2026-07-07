@@ -104,8 +104,9 @@ rejects.
 go build -o weaved ./cmd/weaved
 
 WEAVE_SPECS=/etc/weave/spec.yaml \
-WEAVE_REPO_URL=https://bitbucket.org/acme/workspace-prod.git \
-WEAVE_BITBUCKET_REPO=acme/workspace-prod \
+WEAVE_REPO_URL=https://github.com/acme/workspace-prod.git \
+WEAVE_PR_PROVIDER=github \
+WEAVE_PR_REPO=acme/workspace-prod \
 WEAVE_GIT_TOKEN=$SERVICE_ACCOUNT_TOKEN \
 WEAVE_ENV=dev \
 ./weaved
@@ -116,14 +117,28 @@ WEAVE_ENV=dev \
 | Listen address | `-listen` / `WEAVE_LISTEN` | `:8080` |
 | Module catalog path | `-specs` / `WEAVE_SPECS` | *(required)* |
 | Workspace repo clone URL | `-repo-url` / `WEAVE_REPO_URL` | *(required)* |
-| Bitbucket repo slug | `-bitbucket-repo` / `WEAVE_BITBUCKET_REPO` | *(required)* |
+| Repo identifier for PRs | `-pr-repo` / `WEAVE_PR_REPO` | *(required)* |
 | Service-account token | `-git-token` / `WEAVE_GIT_TOKEN` | *(required)* |
 | Target environment | `-env` / `WEAVE_ENV` | *(required)* |
 | Base branch | `-base-branch` / `WEAVE_BASE_BRANCH` | `main` |
-| Bitbucket API base | `-bitbucket-api` / `WEAVE_BITBUCKET_API` | `https://api.bitbucket.org` |
+| PR provider | `-pr-provider` / `WEAVE_PR_PROVIDER` | `bitbucket-cloud` |
+| PR API base | `-pr-api` / `WEAVE_PR_API` | *(per provider — see below)* |
 | Demo mode | `-demo` | off |
 
-The server is stateless — run as many replicas as you like.
+The server is stateless — run as many replicas as you like. The legacy
+`WEAVE_BITBUCKET_REPO` / `WEAVE_BITBUCKET_API` env vars are still accepted as
+fallbacks for `WEAVE_PR_REPO` / `WEAVE_PR_API`.
+
+**PR providers.** `WEAVE_PR_PROVIDER` selects how the reviewed PR is opened;
+`WEAVE_PR_REPO` is interpreted in that provider's terms, and `WEAVE_PR_API`
+defaults to the provider's public host (override for self-hosted):
+
+| Provider | `WEAVE_PR_REPO` | `WEAVE_PR_API` default |
+|---|---|---|
+| `bitbucket-cloud` | `workspace/repo` | `https://api.bitbucket.org` |
+| `github` | `owner/repo` | `https://api.github.com` |
+| `gitlab` | `group/project` (subgroups ok) | `https://gitlab.com` |
+| `bitbucket-server` | `PROJECTKEY/repo` | *(required — no public host)* |
 
 **Day 1 → Day 2:** a brand-new target repo needs its workspace bootstrapped
 once — `POST /api/workspace` (or the wizard's "Set up the workspace" link)
@@ -131,9 +146,10 @@ opens a PR that lays down `terraform/env/<env>/`. After that PR merges,
 developers add services with `POST /api/scaffold`. Both are the same
 fail-before-mutate, reviewed-PR loop.
 
-**Current assumptions:** PRs target Bitbucket **Cloud**. Bitbucket Server/DC
-(or GitHub/GitLab) needs its own provider behind the existing
-`PullRequestProvider` interface — a seam, not a rewrite.
+**Deployment model.** The target repo is your CD-pipeline / GitOps repo — the
+merged PR is applied by whatever watches it (e.g. Argo CD). Weave never runs
+Terraform or holds apply credentials; its only write channel is a pushed
+branch + PR.
 
 ## API
 
@@ -169,8 +185,8 @@ Further reading:
 - PostgreSQL-backed sessions and use-case RBAC (developers see only their projects)
 - Authentication / SSO
 - Git/HTTP-backed dynamic module registry (specs fetched from the platform repo)
-- Bitbucket Server/DC, GitHub, GitLab PR providers
 - Per-request attribution in commits and PR bodies
 
 Shipped since v1.0.0: **Day-1 workspace scaffolding via the API**
-(`POST /api/workspace`).
+(`POST /api/workspace`); **GitHub, GitLab, and Bitbucket Server/DC PR
+providers** (`WEAVE_PR_PROVIDER`) alongside the original Bitbucket Cloud.

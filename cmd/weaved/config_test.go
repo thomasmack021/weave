@@ -103,7 +103,7 @@ func TestLoadConfigFlagsOverrideEnv(t *testing.T) {
 
 	args := []string{
 		"-listen", ":7777",
-		"-bitbucket-api", "https://from-flag.example",
+		"-pr-api", "https://from-flag.example",
 		"-env", "prod",
 	}
 	cfg, err := loadConfig(args, envMap(env))
@@ -175,5 +175,98 @@ func TestLoadConfigBadFlag(t *testing.T) {
 	_, err := loadConfig([]string{"-no-such-flag"}, envMap(requiredEnv()))
 	if err == nil {
 		t.Fatal("loadConfig() error = nil, want flag parse error for unknown flag")
+	}
+}
+
+// TestLoadConfigDefaultPRProvider pins the default: with nothing set, the PR
+// provider is Bitbucket Cloud and the API base URL is the public cloud API —
+// exactly the pre-multi-provider behavior.
+func TestLoadConfigDefaultPRProvider(t *testing.T) {
+	cfg, err := loadConfig(nil, envMap(requiredEnv()))
+	if err != nil {
+		t.Fatalf("loadConfig() error = %v, want nil", err)
+	}
+	if cfg.PRProvider != "bitbucket-cloud" {
+		t.Errorf("PRProvider = %q, want default %q", cfg.PRProvider, "bitbucket-cloud")
+	}
+	if cfg.BitbucketAPI != "https://api.bitbucket.org" {
+		t.Errorf("BitbucketAPI = %q, want %q", cfg.BitbucketAPI, "https://api.bitbucket.org")
+	}
+}
+
+// TestLoadConfigProviderAwareAPIDefault proves the API base URL default tracks
+// the selected provider when the operator does not set one explicitly.
+func TestLoadConfigProviderAwareAPIDefault(t *testing.T) {
+	for _, tc := range []struct{ provider, wantAPI string }{
+		{"github", "https://api.github.com"},
+		{"gitlab", "https://gitlab.com"},
+	} {
+		env := requiredEnv()
+		env["WEAVE_PR_PROVIDER"] = tc.provider
+		cfg, err := loadConfig(nil, envMap(env))
+		if err != nil {
+			t.Fatalf("loadConfig(provider=%s) error = %v, want nil", tc.provider, err)
+		}
+		if cfg.PRProvider != tc.provider {
+			t.Errorf("PRProvider = %q, want %q", cfg.PRProvider, tc.provider)
+		}
+		if cfg.BitbucketAPI != tc.wantAPI {
+			t.Errorf("provider %s: BitbucketAPI = %q, want default %q", tc.provider, cfg.BitbucketAPI, tc.wantAPI)
+		}
+	}
+}
+
+// TestLoadConfigExplicitAPIBeatsProviderDefault proves an explicit base URL is
+// never overridden by the provider default (e.g. a self-managed GitLab).
+func TestLoadConfigExplicitAPIBeatsProviderDefault(t *testing.T) {
+	env := requiredEnv()
+	env["WEAVE_PR_PROVIDER"] = "gitlab"
+	env["WEAVE_PR_API"] = "https://gitlab.internal.acme.example"
+	cfg, err := loadConfig(nil, envMap(env))
+	if err != nil {
+		t.Fatalf("loadConfig() error = %v, want nil", err)
+	}
+	if cfg.BitbucketAPI != "https://gitlab.internal.acme.example" {
+		t.Errorf("BitbucketAPI = %q, want the explicit WEAVE_PR_API value", cfg.BitbucketAPI)
+	}
+}
+
+// TestLoadConfigGenericRepoAlias proves WEAVE_PR_REPO is accepted as the
+// provider-neutral alias for the repo identifier.
+func TestLoadConfigGenericRepoAlias(t *testing.T) {
+	env := requiredEnv()
+	delete(env, "WEAVE_BITBUCKET_REPO")
+	env["WEAVE_PR_REPO"] = "acme/infra"
+	cfg, err := loadConfig(nil, envMap(env))
+	if err != nil {
+		t.Fatalf("loadConfig() error = %v, want nil", err)
+	}
+	if cfg.RepoSlug != "acme/infra" {
+		t.Errorf("RepoSlug = %q, want %q from WEAVE_PR_REPO", cfg.RepoSlug, "acme/infra")
+	}
+}
+
+// TestLoadConfigUnknownProvider rejects a provider the factory cannot build,
+// at config time rather than at first request.
+func TestLoadConfigUnknownProvider(t *testing.T) {
+	env := requiredEnv()
+	env["WEAVE_PR_PROVIDER"] = "gerrit"
+	_, err := loadConfig(nil, envMap(env))
+	if err == nil {
+		t.Fatal("loadConfig() error = nil, want an error for an unknown PR provider")
+	}
+	if !strings.Contains(err.Error(), "gerrit") {
+		t.Errorf("error %q does not name the unknown provider", err)
+	}
+}
+
+// TestLoadConfigBitbucketServerRequiresAPI proves the one provider with no
+// public default demands an explicit base URL.
+func TestLoadConfigBitbucketServerRequiresAPI(t *testing.T) {
+	env := requiredEnv()
+	env["WEAVE_PR_PROVIDER"] = "bitbucket-server"
+	_, err := loadConfig(nil, envMap(env))
+	if err == nil {
+		t.Fatal("loadConfig() error = nil, want an error for bitbucket-server without an API base URL")
 	}
 }

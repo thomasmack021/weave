@@ -57,7 +57,10 @@ func run(args []string, getenv func(string) string) error {
 	}
 
 	reg := registry.NewFileSource(cfg.Specs)
-	pr := git.NewHTTPProvider(cfg.BitbucketAPI, nil, cfg.Token)
+	pr, err := newPRProvider(cfg)
+	if err != nil {
+		return err
+	}
 	orch := orchestrate.New(reg, pr, orchestrate.Config{
 		RepoURL:    cfg.RepoURL,
 		RepoSlug:   cfg.RepoSlug,
@@ -67,10 +70,28 @@ func run(args []string, getenv func(string) string) error {
 	})
 	srv := server.New(web.Assets, reg, orch, orch)
 
-	log.Printf("weaved listening on %s (specs=%s repo=%s env=%s bitbucket=%s)",
-		cfg.Listen, cfg.Specs, cfg.RepoSlug, cfg.Env, cfg.BitbucketAPI)
+	log.Printf("weaved listening on %s (specs=%s repo=%s env=%s provider=%s api=%s)",
+		cfg.Listen, cfg.Specs, cfg.RepoSlug, cfg.Env, cfg.PRProvider, cfg.BitbucketAPI)
 	if err := http.ListenAndServe(cfg.Listen, srv.Handler()); err != nil {
 		return fmt.Errorf("weaved: serving on %s: %w", cfg.Listen, err)
 	}
 	return nil
+}
+
+// newPRProvider builds the configured PullRequestProvider. The provider name is
+// already validated in loadConfig; the default case stays as defense in depth.
+// Assembly lives here in main, never in the provider packages.
+func newPRProvider(cfg config) (git.PullRequestProvider, error) {
+	switch cfg.PRProvider {
+	case "bitbucket-cloud":
+		return git.NewHTTPProvider(cfg.BitbucketAPI, nil, cfg.Token), nil
+	case "github":
+		return git.NewGitHubProvider(cfg.BitbucketAPI, nil, cfg.Token), nil
+	case "gitlab":
+		return git.NewGitLabProvider(cfg.BitbucketAPI, nil, cfg.Token), nil
+	case "bitbucket-server":
+		return git.NewBitbucketServerProvider(cfg.BitbucketAPI, nil, cfg.Token), nil
+	default:
+		return nil, fmt.Errorf("weaved: unknown PR provider %q", cfg.PRProvider)
+	}
 }

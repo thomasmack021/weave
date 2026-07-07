@@ -135,8 +135,11 @@ browser.
      editing, strict validation, `ChangeSet` production, atomic file writes,
      `pipeline.yaml` merging, `git.Committer`
      (`Stage`/`Commit`/`CheckoutBranch`/`Push`), the package-level `git.Clone`
-     (clone-to-temp), and a tested Bitbucket Cloud `CreatePullRequest`
-     provider.
+     (clone-to-temp), and four tested `PullRequestProvider` implementations —
+     Bitbucket Cloud (`HTTPProvider`), GitHub (`GitHubProvider`), GitLab
+     (`GitLabProvider`), and Bitbucket Server/DC
+     (`BitbucketServerProvider`) — all sharing one `postPRJSON` HTTP spine and
+     selected by config, never by the request.
    - Note: `internal/pipeline` is a YAML-step merger used by `domain.Scaffold`,
      **not** an orchestrator, despite the name.
 
@@ -180,20 +183,22 @@ browser.
      `loadConfig(args, getenv)` (env lookup injected — tests never touch the
      process environment; missing required settings accumulated into one
      error, `errors.Join` style). Required: `WEAVE_SPECS`, `WEAVE_REPO_URL`,
-     `WEAVE_GIT_TOKEN`, `WEAVE_BITBUCKET_REPO`, `WEAVE_ENV`. Optional:
-     `WEAVE_LISTEN` (default `:8080`), `WEAVE_BASE_BRANCH` (default `main`),
-     `WEAVE_BITBUCKET_API` (default `https://api.bitbucket.org`).
-   - `WEAVE_BITBUCKET_API` exists because `git.NewHTTPProvider` requires a
-     base URL and defaults nothing: the default targets public Bitbucket
-     Cloud, and the override points the same provider at an internal
-     Bitbucket instance or a local `httptest` stub (trailing slashes are
-     normalized away). Caveat: the provider speaks the Bitbucket **Cloud**
-     REST shape (`/2.0/repositories/...`); an internal Bitbucket
-     Server/Data Center instance exposes a different API
-     (`/rest/api/1.0/...`) and would need its own `PullRequestProvider`
-     implementation — a future step, the seam is the interface.
+     `WEAVE_GIT_TOKEN`, `WEAVE_PR_REPO` (legacy `WEAVE_BITBUCKET_REPO`),
+     `WEAVE_ENV`. Optional: `WEAVE_LISTEN` (default `:8080`),
+     `WEAVE_BASE_BRANCH` (default `main`), `WEAVE_PR_PROVIDER` (default
+     `bitbucket-cloud`), `WEAVE_PR_API` (legacy `WEAVE_BITBUCKET_API`).
+   - `WEAVE_PR_PROVIDER` selects one of `bitbucket-cloud`, `github`, `gitlab`,
+     `bitbucket-server`; validated at config time (unknown → startup error).
+     `WEAVE_PR_API` defaults per provider (the `knownPRProviders` map: Cloud
+     `api.bitbucket.org`, GitHub `api.github.com`, GitLab `gitlab.com`),
+     override for a self-hosted instance or an `httptest` stub (trailing
+     slashes normalized). `bitbucket-server` has no public host, so it
+     *requires* an explicit `WEAVE_PR_API`. `WEAVE_PR_REPO` is interpreted in
+     the provider's terms (`workspace/repo`, `owner/repo`, `group/project`,
+     `PROJECTKEY/repo`). The provider is chosen by `newPRProvider` in `main`;
+     the request never influences it (invariant 7).
    - All DI assembly in `main`/`run` (rule 3): `loadConfig` →
-     `registry.NewFileSource` → `git.NewHTTPProvider` → `orchestrate.New` →
+     `registry.NewFileSource` → `newPRProvider` → `orchestrate.New` →
      `server.New(web.Assets, …)` → `http.ListenAndServe`. `main` is
      smoke-tested (binary + `/health`), not unit-tested; `loadConfig` is.
 

@@ -40,7 +40,7 @@ probably wrong.
 | `internal/validate` | Strict input validation + the virtual-choice expansion layer (see below) | **Core; the 422/500 sentinel taxonomy lives here** |
 | `internal/pipeline` | `pipeline.yaml` step merger used by Scaffold — NOT an orchestrator despite the name | Core |
 | `internal/registry` | `spec.yaml` parsing, `ModuleRegistry` interface, `FileSource` (re-reads per call → spec edits live without redeploy), `FakeRegistry` for tests | Core |
-| `internal/git` | `Committer` (Stage/Commit/CheckoutBranch/Push), package-level `Clone` (the safety boundary), Bitbucket Cloud `HTTPProvider` | Core |
+| `internal/git` | `Committer` (Stage/Commit/CheckoutBranch/Push), package-level `Clone` (the safety boundary), four `PullRequestProvider`s (Bitbucket Cloud/Server, GitHub, GitLab) over one `postPRJSON` spine | Core |
 | `internal/orchestrate` | Fail-before-mutate composition: resolve+validate → clone temp → branch → AddResource → stage/commit/push → PR | The write path |
 | `internal/server` | HTTP API + embedded wizard serving; classification-only error mapping (`errors.Is`), no validation logic | API boundary |
 | `internal/demo` | Self-contained local demo env + THE e2e capstone test; never imported by production code | Test/demo only |

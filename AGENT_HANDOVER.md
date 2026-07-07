@@ -1,7 +1,7 @@
 # Agent Handover: Weave IDP — v1 shipped
 
 *Last verified against the code 2026-07-07: `go build
-./...`, `go vet ./...`, `gofmt` clean; **91 test functions across 11 test-bearing
+./...`, `go vet ./...`, `gofmt` clean; **102 test functions across 11 test-bearing
 packages**, all passing, including the `internal/demo` end-to-end capstone.
 If this document and the code disagree, trust the code and fix this document.
 For the running turn-by-turn state, see `HANDOFF.md`. AI agents: start with
@@ -42,8 +42,10 @@ engine):
   branch, token, dir)` (clone-to-temp — our git safety boundary: all mutation
   happens in a disposable temp clone, so any failure before `push` leaves the
   remote untouched by construction; deliberately **not** a `Committer` method,
-  since cloning creates a repository rather than operating on one); plus a
-  tested Bitbucket Cloud `HTTPProvider.CreatePullRequest`.
+  since cloning creates a repository rather than operating on one); plus four
+  tested `PullRequestProvider` implementations sharing one `postPRJSON` HTTP
+  spine — `HTTPProvider` (Bitbucket Cloud), `GitHubProvider`,
+  `GitLabProvider`, `BitbucketServerProvider` (Server/DC).
 - `internal/server` — `GET /health` + the embedded wizard (`web/index.html`),
   plus the JSON API: `GET /api/catalog` (DTO subset of `ModuleSpec` — module
   `Source` and option `expandsTo` never leak; choice inputs carry
@@ -82,11 +84,12 @@ engine):
 - `cmd/weaved` — the runnable server binary: pure, test-driven
   `loadConfig(args, getenv)` (precedence flag > env > default; required
   settings accumulated into one `errors.Join`-style error; env lookup
-  injected) and an assembly-only `main`/`run`. `WEAVE_BITBUCKET_API`
-  (default `https://api.bitbucket.org`) selects public vs. internal
-  Bitbucket; trailing slash normalized. Note: `HTTPProvider` speaks the
-  Cloud REST shape — Bitbucket Server/DC would need its own
-  `PullRequestProvider` behind the existing interface.
+  injected) and an assembly-only `main`/`run`. `WEAVE_PR_PROVIDER` (default
+  `bitbucket-cloud`) selects the provider; `newPRProvider` builds it in
+  `main`. `WEAVE_PR_API` defaults per provider (`knownPRProviders`) and is
+  required for `bitbucket-server`; `WEAVE_PR_REPO` is the provider-specific
+  repo id. Legacy `WEAVE_BITBUCKET_API`/`WEAVE_BITBUCKET_REPO` still accepted
+  as fallbacks.
 
 What does **not** exist yet (the post-v1 roadmap; items marked ✅ APPROVED
 were green-lit by the user on 2026-07-07 — see HANDOFF.md):
@@ -96,8 +99,9 @@ were green-lit by the user on 2026-07-07 — see HANDOFF.md):
 - Authentication / SSO.
 - Git/HTTP-backed dynamic module registry (same `ModuleRegistry` interface,
   remote source).
-- ✅ APPROVED — Bitbucket Server/DC, GitHub, GitLab PR providers (new
-  implementations of `git.PullRequestProvider`).
+- ✅ DONE (2026-07-07) — Bitbucket Server/DC, GitHub, GitLab PR providers
+  (new implementations of `git.PullRequestProvider`, selected via
+  `WEAVE_PR_PROVIDER`).
 - ✅ DONE (2026-07-07) — Day-1 workspace scaffolding via the API
   (`POST /api/workspace` → `orchestrate.InitWorkspace`, plus the wizard's
   "Set up the workspace" link). The target repo no longer needs a
