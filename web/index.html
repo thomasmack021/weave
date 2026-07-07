@@ -99,11 +99,22 @@ const app = document.getElementById("app");
 const stepsEl = document.getElementById("steps");
 const STEPS = ["Choose service", "Configure", "Review & submit"];
 let catalog = [];
-let state = { step: 0, module: null, instanceName: "", inputs: {} };
+let useCases = [];
+let multiTenant = false;
+let state = { step: 0, module: null, instanceName: "", inputs: {}, useCase: null };
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, c =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/* Scaffold/workspace calls are use-case-scoped when a use case is selected
+   (multi-tenant mode), otherwise they hit the single-tenant endpoints. */
+function scaffoldURL() {
+  return state.useCase ? `/api/usecases/${encodeURIComponent(state.useCase)}/scaffold` : "/api/scaffold";
+}
+function workspaceURL() {
+  return state.useCase ? `/api/usecases/${encodeURIComponent(state.useCase)}/workspace` : "/api/workspace";
 }
 
 function renderSteps() {
@@ -138,11 +149,20 @@ async function loadCatalog() {
 }
 
 function renderCatalog() {
+  // In multi-tenant mode, show which environment we're in with a way back to
+  // the picker.
+  const envBar = (multiTenant && state.useCase)
+    ? `<p class="hint">Environment: <span class="mono">${esc(state.useCase)}</span>
+        · <a href="#" id="changeEnv">change</a></p>`
+    : "";
   if (!catalog.length) {
-    app.innerHTML = `<div class="card"><p class="desc">The catalog is empty. Ask your platform team to publish module specs.</p></div>`;
+    app.innerHTML = envBar + `<div class="card"><p class="desc">The catalog is empty. Ask your platform team to publish module specs.</p></div>`;
+    if (multiTenant && state.useCase) {
+      document.getElementById("changeEnv").onclick = (e) => { e.preventDefault(); renderUseCasePicker(); };
+    }
     return;
   }
-  app.innerHTML = catalog.map((m, i) => `
+  app.innerHTML = envBar + catalog.map((m, i) => `
     <div class="card clickable" data-i="${i}">
       <h3>${esc(m.displayName || m.name)}<span class="badge">v${esc(m.version)}</span></h3>
       <p class="desc">${esc(m.description || "")}</p>
@@ -157,6 +177,9 @@ function renderCatalog() {
       render();
     }));
   document.getElementById("initLink").onclick = (e) => { e.preventDefault(); renderInit(); };
+  if (multiTenant && state.useCase) {
+    document.getElementById("changeEnv").onclick = (e) => { e.preventDefault(); renderUseCasePicker(); };
+  }
 }
 
 /* Day 1 workspace initialization — a one-time setup action, deliberately kept
@@ -189,7 +212,7 @@ async function submitInit() {
   if (!state.projectId) return showErrors("initErrors", ["Cloud project ID is required."]);
   btn.disabled = true; btn.textContent = "Setting up…";
   try {
-    const res = await fetch("/api/workspace", {
+    const res = await fetch(workspaceURL(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId: state.projectId }),
@@ -200,7 +223,9 @@ async function submitInit() {
       body.prUrl, body.branch);
     if (res.status === 200 && body.changed === false) return renderResult("✅", "Workspace already set up",
       "This environment is already initialized — you can go ahead and provision services.");
-    if (res.status === 422) {
+    if (res.status === 403) {
+      showErrors("initErrors", ["You don't have access to this environment. Ask your platform team."]);
+    } else if (res.status === 422) {
       showErrors("initErrors", body.errors || ["Your request was rejected by validation."]);
     } else if (res.status === 502 && body.branch) {
       showErrors("initErrors", [
@@ -331,7 +356,7 @@ async function submit() {
   const btn = document.getElementById("submit");
   btn.disabled = true; btn.textContent = "Submitting…";
   try {
-    const res = await fetch("/api/scaffold", {
+    const res = await fetch(scaffoldURL(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -346,7 +371,9 @@ async function submit() {
       body.prUrl, body.branch);
     if (res.status === 200 && body.changed === false) return renderResult("✅", "Already up to date",
       "This exact resource already exists — no changes were needed and no PR was opened.");
-    if (res.status === 422) {
+    if (res.status === 403) {
+      showErrors("submitErrors", ["You don't have access to this environment. Ask your platform team."]);
+    } else if (res.status === 422) {
       showErrors("submitErrors", body.errors || ["Your request was rejected by validation."]);
     } else if (res.status === 502 && body.branch) {
       showErrors("submitErrors", [
@@ -378,12 +405,64 @@ function renderResult(icon, title, text, prUrl, branch) {
       </div>
     </div>`;
   document.getElementById("again").onclick = () => {
-    state = { step: 0, module: null, instanceName: "", inputs: {} };
+    // Keep the selected use case so the user can add another service to the
+    // same environment; "change environment" returns to the picker.
+    state = { step: 0, module: null, instanceName: "", inputs: {}, useCase: state.useCase };
     loadCatalog();
   };
 }
 
-loadCatalog();
+/* Entry point. Probe /api/usecases to detect multi-tenant mode: 200 → show a
+   use-case picker first; 401 → not signed in; anything else (e.g. 404 in the
+   single-tenant / demo build) → the original single-tenant catalog flow. */
+async function boot() {
+  app.innerHTML = `<div class="card"><p class="desc">Loading…</p></div>`;
+  let res;
+  try {
+    res = await fetch("/api/usecases");
+  } catch (e) {
+    return loadCatalog(); // network hiccup: fall back to the catalog
+  }
+  if (res.status === 401) return renderAuthNeeded();
+  if (!res.ok) { multiTenant = false; return loadCatalog(); }
+  multiTenant = true;
+  const body = await res.json().catch(() => ({ useCases: [] }));
+  useCases = body.useCases || [];
+  renderUseCasePicker();
+}
+
+function renderAuthNeeded() {
+  stepsEl.innerHTML = "";
+  app.innerHTML = `<div class="card">
+    <h3>Sign in required</h3>
+    <p class="desc">Weave couldn't identify you. Sign in through your
+    organization's single sign-on, then reload this page.</p></div>`;
+}
+
+function renderUseCasePicker() {
+  stepsEl.innerHTML = "";
+  if (!useCases.length) {
+    app.innerHTML = `<div class="card">
+      <h3>No environments yet</h3>
+      <p class="desc">You don't have access to any use cases. Ask your platform
+      team to grant you access or to onboard one.</p></div>`;
+    return;
+  }
+  app.innerHTML = `<p class="hint">Choose the environment to work in:</p>` +
+    useCases.map((u, i) => `
+      <div class="card clickable" data-i="${i}">
+        <h3>${esc(u.displayName || u.key)}<span class="badge">${esc(u.env)}</span></h3>
+        <p class="desc mono">${esc(u.key)}</p>
+      </div>`).join("");
+  app.querySelectorAll(".card.clickable").forEach(el =>
+    el.addEventListener("click", () => {
+      state.useCase = useCases[+el.dataset.i].key;
+      state.step = 0; state.module = null; state.inputs = {};
+      loadCatalog();
+    }));
+}
+
+boot();
 </script>
 </body>
 </html>

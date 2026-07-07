@@ -222,8 +222,6 @@ names a use-case *key* — repo URLs and tokens never come from the client. See
 
 ## Roadmap
 
-- Wizard use-case selector (the multi-tenant API is complete; the UI still uses
-  the single-tenant flow)
 - Real per-use-case credential backend (encrypted column / cloud secret
   manager) replacing the current single shared token
 - Git/HTTP-backed dynamic module registry (specs fetched from the platform repo)
@@ -232,5 +230,5 @@ names a use-case *key* — repo URLs and tokens never come from the client. See
 Shipped since v1.0.0: **Day-1 workspace scaffolding** (`POST /api/workspace`);
 **GitHub, GitLab, Bitbucket Server/DC PR providers** (`WEAVE_PR_PROVIDER`);
 **identity + PostgreSQL sessions** (`internal/auth`, `WEAVE_AUTH_MODE`); and
-**multi-tenant use-case RBAC** (`internal/store`, `internal/usecase`,
-`/api/usecases`).
+**multi-tenant use-case RBAC** end-to-end (`internal/store`,
+`internal/usecase`, `/api/usecases`, and the wizard's use-case picker).

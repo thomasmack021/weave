@@ -94,8 +94,10 @@ engine):
   Sentinels `ErrUseCaseNotFound` (→404) / `ErrForbidden` (→403). Server
   endpoints (`GET /api/usecases`, `POST /api/usecases[/{key}/scaffold|
   workspace|members|groups]`) attach opt-in via `server.WithUseCases`; wired
-  in `cmd/weaved` with `WEAVE_BOOTSTRAP_ADMINS`. Proven end-to-end vs real
-  Postgres. **Remaining:** the wizard use-case selector.
+  in `cmd/weaved` with `WEAVE_BOOTSTRAP_ADMINS`. The wizard
+  (`web/index.html`) probes `/api/usecases` and shows a use-case picker in
+  multi-tenant mode, falling back to the single-tenant flow when absent.
+  Proven end-to-end vs real Postgres, including the browser wizard.
 - `internal/demo` — zero-config local environment (bare workspace repo seeded
   by the real `domain.Scaffold`, example choice-bearing `spec.yaml`, fake
   in-process Bitbucket serving PR pages) behind `weaved -demo`; its e2e tests
@@ -125,13 +127,13 @@ engine):
 What does **not** exist yet (the post-v1 roadmap; items marked ✅ APPROVED
 were green-lit by the user on 2026-07-07 — see HANDOFF.md):
 
-- ✅ MOSTLY DONE — PostgreSQL sessions + multi-tenant use-case RBAC.
+- ✅ DONE — PostgreSQL sessions + multi-tenant use-case RBAC.
   **Increments 1 (foundation, `internal/store`), 2 (identity + sessions,
-  `internal/auth`), and 3 (enforcement, `internal/usecase` + server) are
-  DONE** (see `DESIGN.md`), all proven end-to-end vs real Postgres. Decisions
-  locked in `DESIGN.md`: proxy-header identity (Entra), hybrid authz (DB
-  members OR Entra group grants), per-use-case config + credentials.
-  **Remaining:** the wizard use-case selector (frontend); a real per-use-case
+  `internal/auth`), and 3 (enforcement, `internal/usecase` + server + wizard)
+  are all DONE** (see `DESIGN.md`), proven end-to-end vs real Postgres and the
+  browser wizard. Decisions locked in `DESIGN.md`: proxy-header identity
+  (Entra), hybrid authz (DB members OR Entra group grants), per-use-case config
+  + credentials. **Non-blocking hardening follow-ups:** a real per-use-case
   `CredentialStore` backend (encrypted column / secret manager) replacing the
   current `SharedCredentialStore`; an optional per-use-case module registry.
 - Full SSO/session UX polish (the proxy-header `Authenticator` + PostgreSQL

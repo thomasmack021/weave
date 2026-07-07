@@ -1,10 +1,11 @@
 # DESIGN — Gate 1: PostgreSQL sessions + multi-tenant use-case RBAC
 
-Status: **increments 1–3 done; the wizard use-case selector is the last
-follow-up** (2026-07-07). This document is the agreed architecture for the
-gate; the code lands incrementally (see §8). It is the source of truth for
-*why* the data model looks the way it does — turn-level state still lives in
-`HANDOFF.md`.
+Status: **increments 1–3 complete, including the wizard** (2026-07-07). All
+that remains are non-blocking hardening follow-ups (a real per-use-case
+credential backend; an optional per-use-case registry). This document is the
+agreed architecture for the gate; the code landed incrementally (see §8). It
+is the source of truth for *why* the data model looks the way it does —
+turn-level state still lives in `HANDOFF.md`.
 
 ## 1. Context & goal
 
@@ -156,9 +157,12 @@ the `use_case` row.
    problem and may act on any use case. All opt-in via `server.WithUseCases`;
    wired in `cmd/weaved`. Credentials use a `SharedCredentialStore` (one
    platform token) for now.
-   - **Remaining follow-up:** the wizard use-case selector (the API is complete
-     and proven; the single-tenant `/api/scaffold` + `/api/workspace` and the
-     demo path are unchanged).
+   - **Wizard (`web/index.html`) — done.** On load it probes `GET /api/usecases`:
+     200 ⇒ multi-tenant, show a use-case picker (only the caller's use cases)
+     then the scoped catalog with an "Environment: … · change" bar, scaffolding
+     via `/api/usecases/{key}/scaffold`; 401 ⇒ a sign-in message; 404/absent ⇒
+     the unchanged single-tenant / demo flow. A principal with no access sees
+     "No environments yet".
 
 ## 9. Invariants preserved
 

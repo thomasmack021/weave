@@ -14,13 +14,13 @@
 - **Weave v1 is SHIPPED and PUBLISHED**, now on
   `github.com/thomasmack021/weave` (public). Three post-v1 gates are fully
   done (publish + Day-1 workspace scaffolding + multi-provider PRs) and the
-  fourth (Postgres/RBAC) has **increments 1 (foundation), 2 (identity +
-  sessions), and 3 (multi-tenant enforcement)** done — only the wizard
-  use-case selector remains. Full `weave-verify` playbook green: `go build
-  ./...`, `go vet ./...`, `gofmt -l internal cmd web` all clean; `go test
-  ./... -count=1`: **all 14 test-bearing packages ok, 148 test functions**.
-  Plus **3 testcontainers integration tests** green under
-  `go test -tags=integration ./internal/store/` (Docker; real Postgres 16).
+  fourth (Postgres/RBAC) is **COMPLETE — increments 1 (foundation), 2
+  (identity + sessions), and 3 (multi-tenant enforcement + wizard)** all done.
+  Full `weave-verify` playbook green: `go build ./...`, `go vet ./...`,
+  `gofmt -l internal cmd web` all clean; `go test ./... -count=1`: **all 14
+  test-bearing packages ok, 148 test functions**. Plus **3 testcontainers
+  integration tests** green under `go test -tags=integration
+  ./internal/store/` (Docker; real Postgres 16).
 - **Increment 3 proven end-to-end against real Postgres** (header auth mode,
   identities varied per request via `X-Forwarded-Email`/`-Groups`): bootstrap
   admin creates a use case (201), non-admin create (403), admin adds a
@@ -130,13 +130,14 @@ execution order; each still gets red-first TDD and honest verification):
      create/members/groups) opt-in via `server.WithUseCases`; wired in
      `cmd/weaved` with `WEAVE_BOOTSTRAP_ADMINS`. `git.NewProvider` factory
      centralized. Proven end-to-end vs real Postgres. All red-first.
-   - **← NEXT (the only remaining piece): the wizard use-case selector.** The
-     multi-tenant API is complete and proven; the single-file wizard
-     (`web/index.html`) still uses the single-tenant `/api/catalog` +
-     `/api/scaffold`. It should detect multi-tenant mode (probe
-     `GET /api/usecases`), let the user pick a use case, then scaffold via
-     `/api/usecases/{key}/scaffold`. Keep the demo/single-tenant flow working
-     when `/api/usecases` is absent (404).
+   - ✅ **Wizard use-case selector** (`web/index.html`): probes
+     `GET /api/usecases` on load — 200 ⇒ picker (only the caller's use cases) →
+     scoped catalog with an "Environment · change" bar, scaffolding via
+     `/api/usecases/{key}/scaffold`; 401 ⇒ sign-in message; 404/absent ⇒ the
+     unchanged single-tenant/demo flow. Verified in a real browser (member,
+     stranger, and demo paths).
+   - **Gate 1 is COMPLETE.** Non-blocking hardening remains (real
+     per-use-case credential backend; optional per-use-case registry).
 
 **Product context from the user (shapes the RBAC/registry data model):**
 admins onboard the source repos that contain the IaC modules; developers
@@ -161,26 +162,27 @@ registry; per-request attribution + token rotation.
 
 ## Resume prompt (for the next session)
 
-Gate 1 **increments 1–3 are done and pushed** to
-`github.com/thomasmack021/weave`: RBAC/sessions foundation (`internal/store`),
-identity + PostgreSQL sessions (`internal/auth`), and multi-tenant enforcement
-(`internal/usecase` + `/api/usecases/*`, `WEAVE_BOOTSTRAP_ADMINS`). Working
-tree clean. All four originally-approved tasks plus increments 2 and 3 are
-complete and proven end-to-end vs real Postgres.
+**Gate 1 is COMPLETE** and pushed to `github.com/thomasmack021/weave`: all
+three increments — RBAC/sessions foundation (`internal/store`), identity +
+PostgreSQL sessions (`internal/auth`), and multi-tenant enforcement
+(`internal/usecase` + `/api/usecases/*` + the wizard use-case picker) — done
+and proven end-to-end vs real Postgres and in a real browser. Working tree
+clean. Every task the user asked for (publish, Day-1 scaffolding, PR providers,
+and Gate 1 in full) is delivered.
 
-**The one remaining Gate 1 piece: the wizard use-case selector** (frontend).
-The multi-tenant API is complete; `web/index.html` still drives the
-single-tenant `/api/catalog` + `/api/scaffold`. Make it:
-1. Probe `GET /api/usecases` on load. If 404/absent → single-tenant mode
-   (today's flow, unchanged — keep demo working). If 200 → multi-tenant.
-2. In multi-tenant mode, show a use-case picker first, then the catalog, then
-   scaffold via `POST /api/usecases/{key}/scaffold` (and the "Set up the
-   workspace" link via `/api/usecases/{key}/workspace`).
-3. Handle 401/403/404 honestly in the UI.
-
-Other follow-ups (not blocking): a real per-use-case `CredentialStore` backend
-(encrypted column / secret manager) to replace `SharedCredentialStore`; an
-optional per-use-case module registry.
+**Open, non-blocking hardening follow-ups** (no re-approval needed; sensible
+next steps, not yet started):
+1. A real per-use-case `CredentialStore` backend — an encrypted column keyed
+   by an app KEK, or GCP Secret Manager via workload identity — to replace the
+   current `store.SharedCredentialStore` (one shared token for all repos). The
+   seam already exists (`store.CredentialStore`); only a new implementation +
+   wiring in `cmd/weaved`'s `setupTenancy` is needed.
+2. An optional per-use-case module registry (today the catalog is global; the
+   `registry.ModuleRegistry` interface is the seam).
+3. Per-request attribution in commits/PR bodies (the authenticated principal
+   is now available to thread through).
+4. Secure-by-default hardening review: `WEAVE_SECURE_COOKIES` in prod, session
+   cleanup/expiry sweep, admin endpoints for listing/removing members.
 
 Start with `weave-onboard`, verify with `weave-verify` (includes
 `go test -tags=integration ./internal/store/`, Docker required).
