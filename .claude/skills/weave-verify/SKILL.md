@@ -5,7 +5,7 @@ description: Verify the Weave codebase end-to-end - build, vet, format, full tes
 
 # Verifying Weave
 
-## 1. Static + unit/integration suite (always)
+## 1. Static + unit suite (always)
 
 ```sh
 go build ./... && go vet ./...
@@ -13,7 +13,21 @@ gofmt -l internal cmd web        # must print nothing
 go test ./... -count=1
 ```
 
-Expected: every package `ok` (11 Go packages with tests + `web` with none).
+Expected: every package `ok` (12 Go packages with tests + `web` with none):
+domain, fs, git, hcl, orchestrate, pipeline, registry, server, store,
+validate, demo, cmd/weaved. `internal/store`'s default run is its pure unit
+tests (RBAC decision, role ordering, token hashing).
+
+## 1b. Store integration suite (when `internal/store` changed; Docker required)
+
+```sh
+go test -tags=integration ./internal/store/    # spins up Postgres via testcontainers
+```
+
+Expected: `ok` with 3 passing tests (user/use-case lifecycle, hybrid RBAC
+filtering, session lifecycle). These are gated behind `//go:build integration`
+so the default suite stays fast and Docker-free; run them after any change to
+the schema, migrations, or `PostgresStore`.
 The suite includes `internal/demo`'s end-to-end capstone, which drives the
 real production graph (FileSource → orchestrator → go-git → Bitbucket HTTP
 provider) through the real HTTP API against a local bare repo — so a fully

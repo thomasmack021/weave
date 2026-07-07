@@ -182,11 +182,14 @@ Further reading:
 
 ## Roadmap
 
-- PostgreSQL-backed sessions and use-case RBAC (developers see only their projects)
-- Authentication / SSO
+- Multi-tenant use-case RBAC + PostgreSQL sessions — **foundation landed**
+  (`internal/store`; see [DESIGN.md](DESIGN.md)); identity middleware and
+  endpoint enforcement next
+- Authentication / SSO (trusted proxy header → Entra ID; solo-dev mode)
 - Git/HTTP-backed dynamic module registry (specs fetched from the platform repo)
 - Per-request attribution in commits and PR bodies
 
 Shipped since v1.0.0: **Day-1 workspace scaffolding via the API**
 (`POST /api/workspace`); **GitHub, GitLab, and Bitbucket Server/DC PR
-providers** (`WEAVE_PR_PROVIDER`) alongside the original Bitbucket Cloud.
+providers** (`WEAVE_PR_PROVIDER`) alongside the original Bitbucket Cloud; the
+**multi-tenant RBAC persistence foundation** (`internal/store`).

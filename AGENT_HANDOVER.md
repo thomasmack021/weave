@@ -1,8 +1,10 @@
 # Agent Handover: Weave IDP — v1 shipped
 
 *Last verified against the code 2026-07-07: `go build
-./...`, `go vet ./...`, `gofmt` clean; **102 test functions across 11 test-bearing
-packages**, all passing, including the `internal/demo` end-to-end capstone.
+./...`, `go vet ./...`, `gofmt` clean; **107 test functions across 12 test-bearing
+packages** (`go test ./...`), all passing, including the `internal/demo`
+end-to-end capstones; plus **3 testcontainers integration tests** under
+`-tags=integration` (`internal/store`, Docker required).
 If this document and the code disagree, trust the code and fix this document.
 For the running turn-by-turn state, see `HANDOFF.md`. AI agents: start with
 `.claude/skills/weave-onboard`.*
@@ -66,12 +68,23 @@ engine):
   seam. Also a "Set up the workspace" link on the catalog screen driving the
   Day 1 `/api/workspace` flow (asks only for the cloud project ID — never
   the Terraform state prefix).
+- `internal/store` — **Gate 1 foundation (2026-07-07), not yet wired to any
+  endpoint.** The multi-tenant RBAC + sessions persistence layer per
+  `DESIGN.md`: entities (`User`, `UseCase`, `Membership`, `GroupGrant`,
+  `Session`), the pure hybrid `EffectiveRole` decision, the `Store` interface
+  + `PostgresStore` (`pgx/v5`), embedded `golang-migrate` migrations
+  (`Migrate`), and a `CredentialStore` seam (`StaticCredentialStore` today).
+  Unit-tested without a DB; `PostgresStore` covered by testcontainers
+  integration tests behind `//go:build integration`
+  (`go test -tags=integration ./internal/store/`). The live server still uses
+  its v1 single-tenant config path — enforcement is the next increment.
 - `internal/demo` — zero-config local environment (bare workspace repo seeded
   by the real `domain.Scaffold`, example choice-bearing `spec.yaml`, fake
-  in-process Bitbucket serving PR pages) behind `weaved -demo`; its e2e test
-  is the v1 capstone (fail-before-mutate proven through the real HTTP API:
+  in-process Bitbucket serving PR pages) behind `weaved -demo`; its e2e tests
+  are the v1 capstones (fail-before-mutate proven through the real HTTP API:
   422 ⇒ zero new remote branches; happy path ⇒ expanded values in the pushed
-  branch). Never imported by the production path.
+  branch; plus `TestEndToEnd_WorkspaceInit` for Day 1). Never imported by the
+  production path.
 - `internal/orchestrate` — `Orchestrator` (via `New(registry.ModuleRegistry,
   git.PullRequestProvider, Config)`): fail-before-mutate composition of the
   above. `Run` is Day 2 (resolve+validate → clone → branch → `AddResource` →
@@ -94,9 +107,17 @@ engine):
 What does **not** exist yet (the post-v1 roadmap; items marked ✅ APPROVED
 were green-lit by the user on 2026-07-07 — see HANDOFF.md):
 
-- ✅ APPROVED — PostgreSQL sessions + use-case RBAC (`pgx`, `golang-migrate`,
-  testcontainers for integration tests) — the next major gate.
-- Authentication / SSO.
+- 🚧 IN PROGRESS — PostgreSQL sessions + multi-tenant use-case RBAC. The
+  **persistence foundation is DONE** (`internal/store`; see `DESIGN.md`).
+  Remaining increments: (2) the `Authenticator` middleware (proxy-header +
+  static backends) + session issue/verify on the HTTP boundary; (3)
+  use-case-scoped `/api/*` endpoints + orchestrator resolving per-use-case
+  repo config & credentials from the `Store`/`CredentialStore` + RBAC checks +
+  admin management endpoints. Decisions locked in `DESIGN.md`: proxy-header
+  identity (Entra), hybrid authz (DB members OR Entra group grants),
+  per-use-case config + credentials.
+- Authentication / SSO (the proxy-header `Authenticator` above is the first
+  half; full SSO/session UX follows).
 - Git/HTTP-backed dynamic module registry (same `ModuleRegistry` interface,
   remote source).
 - ✅ DONE (2026-07-07) — Bitbucket Server/DC, GitHub, GitLab PR providers

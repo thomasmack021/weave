@@ -172,10 +172,28 @@ browser.
      the PR provider), `BaseBranch`, `Token`, `Env` — always server-owned,
      never populated from the request (see rule 3 below).
 
-6. **Database & state (PostgreSQL) — [TARGET, deliberately deferred]**
-   - PostgreSQL via `pgx` + `golang-migrate`, for sessions and "Use Case" RBAC
-     mappings. Nothing exists today (no `pgx`, no migrations, no `internal/db`);
-     the walking skeleton is stateless.
+6. **Database, sessions & RBAC (`internal/store`) — foundation complete;
+   enforcement [TARGET]**
+   - The persistence + RBAC foundation for multi-tenant operation exists in
+     `internal/store` (full spec in `DESIGN.md`): `pgx/v5` `PostgresStore`
+     behind a `Store` interface, embedded `golang-migrate` migrations
+     (`Migrate`), the entities (`User`, `UseCase`, `Membership`, `GroupGrant`,
+     `Session`), the pure hybrid `EffectiveRole` decision (highest of direct
+     membership and matching Entra-group grant), and a `CredentialStore` seam
+     (`StaticCredentialStore` today; encrypted-DB / secret-manager backends
+     later). Session tokens are stored only as a SHA-256 hash.
+   - Tested two ways: pure unit tests (no DB) for `EffectiveRole`, role
+     ordering, and token hashing; and testcontainers integration tests for
+     `PostgresStore` behind `//go:build integration`
+     (`go test -tags=integration ./internal/store/`, Docker required).
+   - **[TARGET] — not yet wired to any endpoint.** The live server still uses
+     the v1 single-tenant global config. Remaining: an `Authenticator`
+     middleware (trusted proxy header → `Principal`, plus a static dev
+     backend), session issue/verify on the HTTP boundary, and use-case-scoped
+     endpoints where the orchestrator resolves per-use-case repo config +
+     credentials from the `Store`/`CredentialStore` under an RBAC check. The
+     request selects a use-case *key*; its config and credentials come from
+     the DB (invariant 4 / "config never from the request" preserved).
 
 7. **Entrypoint (`cmd/weaved`) — complete, tested**
    - First runnable binary. Config via flags/env with precedence

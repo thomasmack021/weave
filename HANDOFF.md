@@ -12,12 +12,14 @@
 ## Verified state (2026-07-07, post-v1 session in progress)
 
 - **Weave v1 is SHIPPED and PUBLISHED**, now on
-  `github.com/thomasmack021/weave` (public), and three post-v1 gates are done
-  (publish + Day-1 workspace scaffolding + multi-provider PRs). Full
-  `weave-verify` playbook green: `go build ./...`, `go vet ./...`,
-  `gofmt -l internal cmd web` all clean; `go test ./... -count=1`: **all 11
-  test-bearing packages ok, 102 test functions** (79 at ship; +12 Day-1 init;
-  +11 PR providers: 5 provider + 6 config).
+  `github.com/thomasmack021/weave` (public). Three post-v1 gates are fully
+  done (publish + Day-1 workspace scaffolding + multi-provider PRs) and the
+  fourth (Postgres/RBAC) has its **foundation** done. Full `weave-verify`
+  playbook green: `go build ./...`, `go vet ./...`, `gofmt -l internal cmd
+  web` all clean; `go test ./... -count=1`: **all 12 test-bearing packages
+  ok, 107 test functions** (79 at ship; +12 Day-1 init; +11 PR providers;
+  +5 store unit). Plus **3 testcontainers integration tests** green under
+  `go test -tags=integration ./internal/store/` (Docker; real Postgres 16).
 - The `internal/demo` **end-to-end capstones** pass: `TestEndToEnd_DemoLoop`
   (Day 2) and the new `TestEndToEnd_WorkspaceInit` (Day 1) both drive the real
   production graph through the real HTTP API — fail-before-mutate proven
@@ -98,10 +100,21 @@ execution order; each still gets red-first TDD and honest verification):
    at config time; `newPRProvider` factory in `main`), never the request.
    Provider-aware `WEAVE_PR_API` defaults; legacy `WEAVE_BITBUCKET_*` env vars
    still accepted. All red-first (httptest fakes per provider).
-4. **PostgreSQL sessions + use-case RBAC** — `pgx`, `golang-migrate`,
-   testcontainers (Docker verified available); developers see only their
-   use cases. **← NEXT** — this is a GATE; the next session should confirm
-   scope with the user before building (schema/identity decisions below).
+4. 🚧 **PostgreSQL sessions + multi-tenant use-case RBAC** — user-approved,
+   design agreed and recorded in `DESIGN.md` (identity = trusted proxy header
+   → Entra + solo dev; **hybrid** authz = DB members OR Entra group grants;
+   per-use-case repo config + credentials behind a `CredentialStore`).
+   **Foundation DONE this session** (`internal/store`): pgx `PostgresStore`
+   behind a `Store` interface, embedded `golang-migrate` migrations, pure
+   `EffectiveRole`, `CredentialStore`/`StaticCredentialStore`, unit +
+   testcontainers integration tests — all red-first, all green. **NOT wired to
+   any endpoint yet** (v1 single-tenant config path untouched).
+   **← NEXT increments:** (a) `Authenticator` middleware (proxy-header +
+   static) + PostgreSQL session issue/verify on the HTTP boundary; (b)
+   use-case-scoped `/api/*` + orchestrator resolving per-use-case repo config &
+   credentials from the `Store`/`CredentialStore` + RBAC checks + admin
+   management endpoints. Both are their own steps; keep the foundation's
+   reversibility until (b) deliberately replaces the global config path.
 
 **Product context from the user (shapes the RBAC/registry data model):**
 admins onboard the source repos that contain the IaC modules; developers

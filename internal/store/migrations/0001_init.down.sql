@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS group_grants;
+DROP TABLE IF EXISTS memberships;
+DROP TABLE IF EXISTS use_cases;
+DROP TABLE IF EXISTS users;
