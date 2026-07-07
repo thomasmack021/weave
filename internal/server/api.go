@@ -53,6 +53,15 @@ type scaffoldRequest struct {
 	Inputs       map[string]string `json:"inputs"`
 }
 
+// workspaceRequest is the only data a client may supply for Day 1
+// initialization: the target repo, base branch, environment, and token come
+// from server config. Unknown body fields (repoUrl, env, token) are ignored by
+// decoding, so config-shaped fields cannot reach the WorkspaceInitializer.
+type workspaceRequest struct {
+	ProjectID   string `json:"projectId"`
+	StatePrefix string `json:"statePrefix"`
+}
+
 func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
@@ -138,6 +147,45 @@ func (s *Server) handleScaffold(w http.ResponseWriter, r *http.Request) {
 		case result.Branch != "":
 			// Push succeeded but PR creation failed: surface the pushed
 			// branch so the caller can recover it instead of losing it.
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error(), "branch": result.Branch})
+		default:
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+		return
+	}
+
+	if !result.Changed {
+		writeJSON(w, http.StatusOK, map[string]bool{"changed": false})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{"prUrl": result.PRURL, "branch": result.Branch})
+}
+
+// handleWorkspace backs POST /api/workspace: Day 1 initialization of the
+// terraform/env/<env>/ scaffold in the target repo. It mirrors handleScaffold
+// exactly — classification-only status mapping via errors.Is, config never
+// from the request — differing only in the orchestrator method it drives.
+func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	var req workspaceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "malformed JSON body: " + err.Error()})
+		return
+	}
+
+	result, err := s.initializer.InitWorkspace(r.Context(), orchestrate.InitRequest{
+		ProjectID:   req.ProjectID,
+		StatePrefix: req.StatePrefix,
+	})
+	if err != nil {
+		switch {
+		case isRequestError(err):
+			writeJSON(w, http.StatusUnprocessableEntity, map[string][]string{"errors": errorMessages(err)})
+		case result.Branch != "":
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error(), "branch": result.Branch})
 		default:
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})

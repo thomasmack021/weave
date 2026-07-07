@@ -146,7 +146,9 @@ function renderCatalog() {
     <div class="card clickable" data-i="${i}">
       <h3>${esc(m.displayName || m.name)}<span class="badge">v${esc(m.version)}</span></h3>
       <p class="desc">${esc(m.description || "")}</p>
-    </div>`).join("");
+    </div>`).join("") + `
+    <p class="hint" style="margin-top:18px">First time deploying to this environment?
+      <a href="#" id="initLink">Set up the workspace →</a></p>`;
   app.querySelectorAll(".card.clickable").forEach(el =>
     el.addEventListener("click", () => {
       state.module = catalog[+el.dataset.i];
@@ -154,6 +156,66 @@ function renderCatalog() {
       state.step = 1;
       render();
     }));
+  document.getElementById("initLink").onclick = (e) => { e.preventDefault(); renderInit(); };
+}
+
+/* Day 1 workspace initialization — a one-time setup action, deliberately kept
+   out of the 3-step service flow. It asks only for the business-meaningful
+   cloud project; the Terraform state layout is derived server-side so the
+   developer never sees IaC plumbing. */
+function renderInit() {
+  stepsEl.innerHTML = "";
+  app.innerHTML = `
+    <div class="card">
+      <h3>Set up your deployment workspace</h3>
+      <p class="desc">A one-time step that prepares this environment to receive services.
+        We open a pull request that lays down the platform-approved workspace scaffold —
+        you never touch the underlying configuration.</p>
+      <label>Cloud project ID <span class="req">*</span><small> — the cloud project your services deploy into (e.g. <span class="mono">acme-prod</span>)</small></label>
+      <input type="text" name="projectId" value="${esc(state.projectId || "")}">
+      <div id="initErrors"></div>
+      <div class="row">
+        <button id="back">Back</button>
+        <button class="primary" id="initSubmit">Set up workspace — open pull request</button>
+      </div>
+    </div>`;
+  document.getElementById("back").onclick = () => { state.step = 0; render(); };
+  document.getElementById("initSubmit").onclick = submitInit;
+}
+
+async function submitInit() {
+  const btn = document.getElementById("initSubmit");
+  state.projectId = (app.querySelector('[name="projectId"]') || { value: "" }).value.trim();
+  if (!state.projectId) return showErrors("initErrors", ["Cloud project ID is required."]);
+  btn.disabled = true; btn.textContent = "Setting up…";
+  try {
+    const res = await fetch("/api/workspace", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: state.projectId }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 201) return renderResult("🎉", "Workspace setup submitted!",
+      "Once your platform team merges this pull request, you can start provisioning services.",
+      body.prUrl, body.branch);
+    if (res.status === 200 && body.changed === false) return renderResult("✅", "Workspace already set up",
+      "This environment is already initialized — you can go ahead and provision services.");
+    if (res.status === 422) {
+      showErrors("initErrors", body.errors || ["Your request was rejected by validation."]);
+    } else if (res.status === 502 && body.branch) {
+      showErrors("initErrors", [
+        `The workspace scaffold was pushed (branch ${body.branch}) but the pull request could not be opened. ` +
+        `Nothing is lost — retry, or ask your platform team to open a PR for that branch.`]);
+    } else {
+      showErrors("initErrors", [body.error || `The platform returned an unexpected error (${res.status}). This is not your fault — contact your platform team.`]);
+    }
+  } catch (e) {
+    showErrors("initErrors", ["Network error: " + e.message]);
+  } finally {
+    if (document.getElementById("initSubmit")) {
+      btn.disabled = false; btn.textContent = "Set up workspace — open pull request";
+    }
+  }
 }
 
 function renderConfigure() {

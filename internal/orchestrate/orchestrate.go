@@ -104,6 +104,16 @@ func (o *Orchestrator) Run(ctx context.Context, req Request) (Result, error) {
 		return Result{Changed: false}, nil
 	}
 
+	return o.publish(ctx, repo, ws, cs, branch,
+		fmt.Sprintf("weave: add %s %s", req.ModuleType, req.InstanceName),
+		fmt.Sprintf("Add %s: %s", req.ModuleType, req.InstanceName),
+	)
+}
+
+// publish is the shared tail of every orchestrated mutation: stage the
+// changed files, commit, push the branch, and open the pull request. The
+// ChangeSet must contain at least one created/updated file.
+func (o *Orchestrator) publish(ctx context.Context, repo *git.Repository, ws *fs.Workspace, cs domain.ChangeSet, branch, commitMsg, prTitle string) (Result, error) {
 	paths := make([]string, 0, len(cs.Files))
 	for _, f := range cs.Files {
 		if f.Action == domain.ActionUnchanged {
@@ -115,17 +125,14 @@ func (o *Orchestrator) Run(ctx context.Context, req Request) (Result, error) {
 	if err := repo.Stage(paths...); err != nil {
 		return Result{}, fmt.Errorf("orchestrate: staging changed files: %w", err)
 	}
-	if _, err := repo.Commit(fmt.Sprintf("weave: add %s %s", req.ModuleType, req.InstanceName)); err != nil {
+	if _, err := repo.Commit(commitMsg); err != nil {
 		return Result{}, fmt.Errorf("orchestrate: committing: %w", err)
 	}
 	if err := repo.Push(ctx, "origin", o.cfg.Token); err != nil {
 		return Result{}, fmt.Errorf("orchestrate: pushing branch %q: %w", branch, err)
 	}
 
-	prURL, err := o.pr.CreatePullRequest(ctx, o.cfg.RepoSlug, branch, o.cfg.BaseBranch,
-		fmt.Sprintf("Add %s: %s", req.ModuleType, req.InstanceName),
-		cs.Summary(),
-	)
+	prURL, err := o.pr.CreatePullRequest(ctx, o.cfg.RepoSlug, branch, o.cfg.BaseBranch, prTitle, cs.Summary())
 	if err != nil {
 		// Push already succeeded: the branch exists on the remote with no PR.
 		// Report it so the caller can recover (e.g. retry PR creation) instead

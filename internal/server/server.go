@@ -12,10 +12,18 @@ import (
 )
 
 // Scaffolder is the server's consumer-side view of the orchestration layer:
-// one end-to-end scaffold run. *orchestrate.Orchestrator satisfies it in
-// production (assembled in cmd/weaved); tests substitute a stub.
+// one end-to-end Day 2 resource-addition run. *orchestrate.Orchestrator
+// satisfies it in production (assembled in cmd/weaved); tests substitute a
+// stub.
 type Scaffolder interface {
 	Run(ctx context.Context, req orchestrate.Request) (orchestrate.Result, error)
+}
+
+// WorkspaceInitializer is the server's consumer-side view of the Day 1
+// workspace-initialization run backing /api/workspace.
+// *orchestrate.Orchestrator satisfies it too; tests substitute a stub.
+type WorkspaceInitializer interface {
+	InitWorkspace(ctx context.Context, req orchestrate.InitRequest) (orchestrate.Result, error)
 }
 
 // Server is the HTTP entrypoint for the Weave IDP. It is constructed with its
@@ -23,16 +31,17 @@ type Scaffolder interface {
 type Server struct {
 	// static is the embedded frontend asset tree (index.html at its root),
 	// injected at construction time.
-	static     fs.FS
-	registry   registry.ModuleRegistry
-	scaffolder Scaffolder
+	static      fs.FS
+	registry    registry.ModuleRegistry
+	scaffolder  Scaffolder
+	initializer WorkspaceInitializer
 }
 
 // New constructs a Server with the embedded static asset filesystem, the
-// module registry backing /api/catalog, and the Scaffolder backing
-// /api/scaffold injected.
-func New(static fs.FS, reg registry.ModuleRegistry, scaffolder Scaffolder) *Server {
-	return &Server{static: static, registry: reg, scaffolder: scaffolder}
+// module registry backing /api/catalog, the Scaffolder backing /api/scaffold,
+// and the WorkspaceInitializer backing /api/workspace injected.
+func New(static fs.FS, reg registry.ModuleRegistry, scaffolder Scaffolder, initializer WorkspaceInitializer) *Server {
+	return &Server{static: static, registry: reg, scaffolder: scaffolder, initializer: initializer}
 }
 
 // Handler returns the root HTTP handler for the server. It wires the liveness
@@ -47,6 +56,7 @@ func (s *Server) Handler() http.Handler {
 	// method-qualified mux patterns are not available).
 	mux.HandleFunc("/api/catalog", s.handleCatalog)
 	mux.HandleFunc("/api/scaffold", s.handleScaffold)
+	mux.HandleFunc("/api/workspace", s.handleWorkspace)
 
 	// Everything else is served from the embedded frontend asset tree. The
 	// file server resolves "/" to index.html automatically.

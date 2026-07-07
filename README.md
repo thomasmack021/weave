@@ -125,9 +125,14 @@ WEAVE_ENV=dev \
 
 The server is stateless — run as many replicas as you like.
 
-**v1 assumptions:** the target repo already contains the scaffolded workspace
-(`terraform/env/<env>/`), and PRs target Bitbucket **Cloud**. Bitbucket
-Server/DC (or GitHub/GitLab) needs its own provider behind the existing
+**Day 1 → Day 2:** a brand-new target repo needs its workspace bootstrapped
+once — `POST /api/workspace` (or the wizard's "Set up the workspace" link)
+opens a PR that lays down `terraform/env/<env>/`. After that PR merges,
+developers add services with `POST /api/scaffold`. Both are the same
+fail-before-mutate, reviewed-PR loop.
+
+**Current assumptions:** PRs target Bitbucket **Cloud**. Bitbucket Server/DC
+(or GitHub/GitLab) needs its own provider behind the existing
 `PullRequestProvider` interface — a seam, not a rewrite.
 
 ## API
@@ -136,7 +141,8 @@ Server/DC (or GitHub/GitLab) needs its own provider behind the existing
 |---|---|
 | `GET /health` | liveness probe |
 | `GET /api/catalog` | module catalog DTO: inputs, choices, labels — never git sources or option expansions |
-| `POST /api/scaffold` | `{moduleType, instanceName, inputs}` → `201 {prUrl, branch}` · `200 {changed:false}` (idempotent no-op) · `422 {errors:[…]}` · `502 {error, branch}` (pushed but PR creation failed — the branch is surfaced, not lost) · `500` |
+| `POST /api/workspace` | Day 1 bootstrap: `{projectId}` → lays down `terraform/env/<env>/` in the target repo as a reviewed PR. Same status contract as `/api/scaffold`. `statePrefix` is derived server-side (`weave/<env>`) — the developer never supplies Terraform plumbing. |
+| `POST /api/scaffold` | Day 2 resource add: `{moduleType, instanceName, inputs}` → `201 {prUrl, branch}` · `200 {changed:false}` (idempotent no-op) · `422 {errors:[…]}` · `502 {error, branch}` (pushed but PR creation failed — the branch is surfaced, not lost) · `500` |
 
 Repo URL, base branch, environment, and token come from **server config** —
 never from the request.
@@ -164,5 +170,7 @@ Further reading:
 - Authentication / SSO
 - Git/HTTP-backed dynamic module registry (specs fetched from the platform repo)
 - Bitbucket Server/DC, GitHub, GitLab PR providers
-- Day-1 workspace scaffolding via the API
 - Per-request attribution in commits and PR bodies
+
+Shipped since v1.0.0: **Day-1 workspace scaffolding via the API**
+(`POST /api/workspace`).

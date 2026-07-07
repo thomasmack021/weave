@@ -1,7 +1,7 @@
 # Agent Handover: Weave IDP — v1 shipped
 
-*Last verified against the code 2026-07-06 (v1 ship session): `go build
-./...`, `go vet ./...`, `gofmt` clean; **79 test functions across 11 test-bearing
+*Last verified against the code 2026-07-07: `go build
+./...`, `go vet ./...`, `gofmt` clean; **91 test functions across 11 test-bearing
 packages**, all passing, including the `internal/demo` end-to-end capstone.
 If this document and the code disagree, trust the code and fix this document.
 For the running turn-by-turn state, see `HANDOFF.md`. AI agents: start with
@@ -48,18 +48,22 @@ engine):
   plus the JSON API: `GET /api/catalog` (DTO subset of `ModuleSpec` — module
   `Source` and option `expandsTo` never leak; choice inputs carry
   `options` [value/label/description] and expansion targets carry
-  `managedByChoice: true` so the wizard hides them) and `POST /api/scaffold`
-  (only `{moduleType, instanceName, inputs}` from the client; 201 / 200 no-op
-  / 422 / 400 / 502 / 500 mapped purely via `errors.Is` — caller-fault
-  sentinels incl. `ErrUnknownChoice`/`ErrChoiceConflict` → 422,
-  `ErrSpecInvalid` deliberately excluded → 500, `errors.Join` flattened to
-  one 422 entry per failure). Depends on a one-method `Scaffolder` interface
-  satisfied by `*orchestrate.Orchestrator` (compile-time asserted); assembly
-  happens in `cmd/weaved`.
+  `managedByChoice: true` so the wizard hides them); `POST /api/scaffold`
+  (Day 2, `{moduleType, instanceName, inputs}`); and `POST /api/workspace`
+  (Day 1, `{projectId, statePrefix?}`). Both mutation endpoints map 201 / 200
+  no-op / 422 / 400 / 502 / 500 purely via `errors.Is` — caller-fault
+  sentinels incl. `ErrUnknownChoice`/`ErrChoiceConflict`/`ErrMissingRequired`
+  → 422, `ErrSpecInvalid` deliberately excluded → 500, `errors.Join`
+  flattened to one 422 entry per failure. Depends on the one-method
+  `Scaffolder` and `WorkspaceInitializer` interfaces, both satisfied by
+  `*orchestrate.Orchestrator` (compile-time asserted); assembly happens in
+  `cmd/weaved`.
 - `web/` — the single-file vanilla-JS wizard (no build step): catalog →
   configure (choice option cards; managed inputs hidden) → review → submit →
   PR link; renders 422 error lists and explains the 502 pushed-but-no-PR
-  seam.
+  seam. Also a "Set up the workspace" link on the catalog screen driving the
+  Day 1 `/api/workspace` flow (asks only for the cloud project ID — never
+  the Terraform state prefix).
 - `internal/demo` — zero-config local environment (bare workspace repo seeded
   by the real `domain.Scaffold`, example choice-bearing `spec.yaml`, fake
   in-process Bitbucket serving PR pages) behind `weaved -demo`; its e2e test
@@ -68,9 +72,12 @@ engine):
   branch). Never imported by the production path.
 - `internal/orchestrate` — `Orchestrator` (via `New(registry.ModuleRegistry,
   git.PullRequestProvider, Config)`): fail-before-mutate composition of the
-  above (resolve+validate → clone → branch → `domain.AddResource` →
-  stage/commit/push → PR). Handles the push-succeeds/PR-fails seam by
-  reporting the pushed branch name alongside the error.
+  above. `Run` is Day 2 (resolve+validate → clone → branch → `AddResource` →
+  `publish`); `InitWorkspace` is Day 1 (validate projectId → clone → branch
+  `weave/init-<Env>` → `domain.Scaffold` → `publish`), deriving `statePrefix`
+  as `weave/<Env>` when omitted. `publish` is the shared stage/commit/push/PR
+  tail, so both endpoints handle the push-succeeds/PR-fails seam identically
+  (pushed branch name reported alongside the error).
 
 - `cmd/weaved` — the runnable server binary: pure, test-driven
   `loadConfig(args, getenv)` (precedence flag > env > default; required
@@ -91,8 +98,10 @@ were green-lit by the user on 2026-07-07 — see HANDOFF.md):
   remote source).
 - ✅ APPROVED — Bitbucket Server/DC, GitHub, GitLab PR providers (new
   implementations of `git.PullRequestProvider`).
-- ✅ APPROVED — Day-1 workspace scaffolding via the API (v1 assumes
-  `terraform/env/<env>/` exists in the target repo).
+- ✅ DONE (2026-07-07) — Day-1 workspace scaffolding via the API
+  (`POST /api/workspace` → `orchestrate.InitWorkspace`, plus the wizard's
+  "Set up the workspace" link). The target repo no longer needs a
+  pre-existing `terraform/env/<env>/`; Weave bootstraps it as a reviewed PR.
 - Per-request attribution in commits/PR bodies + token rotation.
 
 **Deployment model context (from the user, 2026-07-07):** the target repo is

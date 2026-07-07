@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -100,6 +101,160 @@ func countBranches(t *testing.T, path string) int {
 	return n
 }
 
+// newBareRepoWithoutScaffold builds a bare repo standing in for a developer's
+// CD-pipeline repo before Weave has ever touched it: one commit containing
+// only a README, no terraform/ tree. It is the fixture for the Day 1
+// workspace-init happy path.
+func newBareRepoWithoutScaffold(t *testing.T) (remoteDir string) {
+	t.Helper()
+	seedDir := t.TempDir()
+	if _, err := gogit.PlainInitWithOptions(seedDir, &gogit.PlainInitOptions{
+		InitOptions: gogit.InitOptions{DefaultBranch: plumbing.Main},
+	}); err != nil {
+		t.Fatalf("PlainInit seed: %v", err)
+	}
+	if err := os.WriteFile(seedDir+"/README.md", []byte("# CD pipeline repo\n"), 0o644); err != nil {
+		t.Fatalf("writing README: %v", err)
+	}
+	seed, err := git.OpenWithAuthor(seedDir, git.Author{Name: "Weave Test", Email: "test@weave.dev"})
+	if err != nil {
+		t.Fatalf("OpenWithAuthor: %v", err)
+	}
+	if err := seed.Stage("README.md"); err != nil {
+		t.Fatalf("Stage: %v", err)
+	}
+	if _, err := seed.Commit("initial commit"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	remoteDir = t.TempDir()
+	if _, err := gogit.PlainClone(remoteDir, true, &gogit.CloneOptions{URL: seedDir}); err != nil {
+		t.Fatalf("PlainClone bare: %v", err)
+	}
+	return remoteDir
+}
+
+// TestEndToEnd_WorkspaceInit is the Day 1 counterpart to the capstone below:
+// it drives POST /api/workspace through the real production graph (real HTTP
+// handler, real go-git, real Bitbucket HTTP provider) and proves both ends of
+// the loop:
+//  1. a fresh CD-pipeline repo with no terraform/ tree gets a 201 with a
+//     branch carrying the full scaffold and the injected project_id, and the
+//     PR URL serves a page;
+//  2. re-initializing the demo's already-scaffolded repo is an idempotent
+//     no-op (200, changed:false) that opens no branch — the real-world safety
+//     property once the init PR has merged.
+func TestEndToEnd_WorkspaceInit(t *testing.T) {
+	env, err := demo.Setup(t.TempDir())
+	if err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	defer env.Close()
+
+	pr := git.NewHTTPProvider(env.BitbucketAPI, nil, env.Token)
+	reg := registry.NewFileSource(env.SpecsPath)
+
+	// --- Fresh repo: 201 with the scaffold PR. ---
+	freshRepo := newBareRepoWithoutScaffold(t)
+	freshOrch := orchestrate.New(reg, pr, orchestrate.Config{
+		RepoURL:    freshRepo,
+		RepoSlug:   env.RepoSlug,
+		BaseBranch: env.BaseBranch,
+		Token:      env.Token,
+		Env:        env.EnvName,
+	})
+	freshTS := httptest.NewServer(server.New(web.Assets, reg, freshOrch, freshOrch).Handler())
+	defer freshTS.Close()
+
+	body := `{"projectId":"acme-prod-project","statePrefix":"weave/dev"}`
+	resp, err := http.Post(freshTS.URL+"/api/workspace", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /api/workspace (fresh): %v", err)
+	}
+	initBody, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("workspace init: status %d, want 201; body %s", resp.StatusCode, initBody)
+	}
+	var result struct {
+		PRURL  string `json:"prUrl"`
+		Branch string `json:"branch"`
+	}
+	if err := json.Unmarshal(initBody, &result); err != nil {
+		t.Fatalf("decoding workspace response %s: %v", initBody, err)
+	}
+	if result.Branch != "weave/init-dev" {
+		t.Errorf("branch = %q, want %q", result.Branch, "weave/init-dev")
+	}
+	resp, err = http.Get(result.PRURL)
+	if err != nil {
+		t.Fatalf("GET pr url %s: %v", result.PRURL, err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET %s: status %d, want 200", result.PRURL, resp.StatusCode)
+	}
+
+	// The pushed branch must carry the scaffold with the injected project_id.
+	repo, err := gogit.PlainOpen(freshRepo)
+	if err != nil {
+		t.Fatalf("opening fresh repo: %v", err)
+	}
+	ref, err := repo.Reference("refs/heads/weave/init-dev", false)
+	if err != nil {
+		t.Fatalf("remote missing pushed init branch: %v", err)
+	}
+	commit, err := repo.CommitObject(ref.Hash())
+	if err != nil {
+		t.Fatalf("reading init branch commit: %v", err)
+	}
+	tfvarsFile, err := commit.File("terraform/env/" + env.EnvName + "/" + env.EnvName + ".tfvars")
+	if err != nil {
+		t.Fatalf("init branch missing tfvars: %v", err)
+	}
+	tfvars, err := tfvarsFile.Contents()
+	if err != nil {
+		t.Fatalf("reading tfvars: %v", err)
+	}
+	if !strings.Contains(tfvars, `project_id = "acme-prod-project"`) {
+		t.Errorf("scaffolded tfvars missing injected project_id:\n%s", tfvars)
+	}
+	if _, err := commit.File("terraform/env/" + env.EnvName + "/main.tf"); err != nil {
+		t.Errorf("init branch missing scaffolded main.tf: %v", err)
+	}
+
+	// --- Already-scaffolded demo repo: idempotent no-op. ---
+	demoOrch := orchestrate.New(reg, pr, orchestrate.Config{
+		RepoURL:    env.RepoURL,
+		RepoSlug:   env.RepoSlug,
+		BaseBranch: env.BaseBranch,
+		Token:      env.Token,
+		Env:        env.EnvName,
+	})
+	demoTS := httptest.NewServer(server.New(web.Assets, reg, demoOrch, demoOrch).Handler())
+	defer demoTS.Close()
+
+	branchesBefore := countBranches(t, env.RepoURL)
+	// Match the exact project the demo seeded (see demo.Setup): re-init with
+	// identical context is the true no-op. A different project_id would be a
+	// legitimate change, not a no-op.
+	seededBody := `{"projectId":"acme-demo-project","statePrefix":"weave/dev"}`
+	resp, err = http.Post(demoTS.URL+"/api/workspace", "application/json", strings.NewReader(seededBody))
+	if err != nil {
+		t.Fatalf("POST /api/workspace (already scaffolded): %v", err)
+	}
+	noopBody, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("re-init: status %d, want 200; body %s", resp.StatusCode, noopBody)
+	}
+	if !bytes.Contains(noopBody, []byte(`"changed":false`)) {
+		t.Errorf("re-init body = %s, want changed:false", noopBody)
+	}
+	if got := countBranches(t, env.RepoURL); got != branchesBefore {
+		t.Errorf("no-op re-init mutated the remote: %d branches, want %d", got, branchesBefore)
+	}
+}
+
 // TestEndToEnd_DemoLoop is the v1 capstone: the full production dependency
 // graph (FileSource registry, orchestrator, go-git, Bitbucket HTTP provider)
 // assembled exactly as cmd/weaved does, driven through the real HTTP API.
@@ -126,7 +281,7 @@ func TestEndToEnd_DemoLoop(t *testing.T) {
 		Token:      env.Token,
 		Env:        env.EnvName,
 	})
-	ts := httptest.NewServer(server.New(web.Assets, reg, orch).Handler())
+	ts := httptest.NewServer(server.New(web.Assets, reg, orch, orch).Handler())
 	defer ts.Close()
 
 	// Liveness + catalog sanity: the wizard's data must be there.

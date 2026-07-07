@@ -65,7 +65,7 @@ func run(args []string, getenv func(string) string) error {
 		Token:      cfg.Token,
 		Env:        cfg.Env,
 	})
-	srv := server.New(web.Assets, reg, orch)
+	srv := server.New(web.Assets, reg, orch, orch)
 
 	log.Printf("weaved listening on %s (specs=%s repo=%s env=%s bitbucket=%s)",
 		cfg.Listen, cfg.Specs, cfg.RepoSlug, cfg.Env, cfg.BitbucketAPI)

@@ -9,26 +9,32 @@
 > its gate — and (5) rewrite this file before ending the turn. Do not trust
 > any other doc over this one for turn-level state.
 
-## Verified state (2026-07-06, independently re-verified by a fresh session)
+## Verified state (2026-07-07, post-v1 session in progress)
 
-- **Weave v1 is SHIPPED**, and a fresh session re-ran the full
-  `weave-verify` playbook from scratch: `go build ./...`, `go vet ./...`,
-  `gofmt -l internal cmd web` all clean; `go test ./... -count=1`: **all 11
-  test-bearing packages ok, 79 test functions** (domain, fs, git, hcl,
-  orchestrate, pipeline, registry, server, validate, demo, cmd/weaved;
-  `web` has no tests) — exactly matching the state recorded at ship time.
-- The `internal/demo` **end-to-end capstone** passes: production graph
-  assembled exactly as `cmd/weaved` does, driven through the real HTTP API —
-  fail-before-mutate proven (422 ⇒ zero new remote branches) and the happy
-  path proven (choice expansion in the pushed branch's tfvars, PR URL serves
-  a page, no virtual-key leakage).
-- Live smoke of the actual binary (`weaved -demo`, rebuilt fresh) verified:
-  /health 200, wizard served (`<title>Weave` present), catalog contains
-  `cloud-run`, 422 on unknown size `galactic`, 201 with
-  `{branch: weave/add-smoke-test, prUrl}` whose PR page itself serves 200.
-- Git state: branch `main`, working tree **clean**, single root commit
-  `4aeb719` tagged **v1.0.0**. No remote is configured — pushing to
-  GitHub/Bitbucket is the user's call.
+- **Weave v1 is SHIPPED and PUBLISHED**, now on
+  `github.com/thomasmack021/weave` (public), and two post-v1 gates are done
+  (publish + Day-1 workspace scaffolding). Full `weave-verify` playbook green:
+  `go build ./...`, `go vet ./...`, `gofmt -l internal cmd web` all clean;
+  `go test ./... -count=1`: **all 11 test-bearing packages ok, 91 test
+  functions** (was 79 at ship; +12 for Day-1 init: 4 orchestrate + 7 server +
+  1 demo e2e).
+- The `internal/demo` **end-to-end capstones** pass: `TestEndToEnd_DemoLoop`
+  (Day 2) and the new `TestEndToEnd_WorkspaceInit` (Day 1) both drive the real
+  production graph through the real HTTP API — fail-before-mutate proven
+  (rejected request ⇒ zero new remote branches) and happy paths proven
+  (expanded/injected values in the pushed branch, PR page serves 200, no
+  leakage).
+- Live smoke of the actual binary (`weaved -demo`) verified via curl AND the
+  real browser wizard: /health 200, wizard served, catalog contains
+  `cloud-run`; `/api/scaffold` 422 on unknown size + 201 happy path;
+  `/api/workspace` 200 no-op (seeded project) + 201 (new project, branch
+  `weave/init-dev`, PR page 200) + 422 (missing projectId). The wizard's
+  "Set up the workspace" link drives the Day-1 201 and no-op screens end to
+  end.
+- Git state: branch `main`, remote `origin` =
+  `github.com/thomasmack021/weave`, `v1.0.0` tag + GitHub release pushed.
+  **Uncommitted:** the Day-1 workspace-scaffolding change (this turn) — being
+  committed now.
 
 ## What shipped in v1 (the ship session, 2026-07-06)
 
@@ -75,15 +81,20 @@ work; the domain test's immediate pass was itself the specified proof).
 The user explicitly approved these four work items (in the agent's chosen
 execution order; each still gets red-first TDD and honest verification):
 
-1. **Publish to GitHub** — done in this session: module renamed to
+1. ✅ **DONE — Publish to GitHub**: module renamed to
    `github.com/thomasmack021/weave` (matches the GitHub account so
    `go install .../cmd/weaved@latest` works), public repo, `main` +
-   `v1.0.0` tag pushed.
-2. **Day-1 workspace scaffolding via the API** — bootstrap
-   `terraform/env/<env>/` in the target repo through the same
-   fail-before-mutate PR loop.
+   `v1.0.0` tag + a GitHub release pushed.
+2. ✅ **DONE — Day-1 workspace scaffolding via the API**:
+   `orchestrate.InitWorkspace` (clone → branch `weave/init-<env>` →
+   `domain.Scaffold` → shared `publish` tail) behind `POST /api/workspace`
+   (`{projectId, statePrefix?}`; statePrefix derived `weave/<env>` when
+   omitted so the developer never sees Terraform plumbing). Wizard gained a
+   "Set up the workspace" link. All red-first; proven e2e by
+   `demo.TestEndToEnd_WorkspaceInit` and the live browser wizard.
 3. **Additional PR providers** — GitHub, GitLab, Bitbucket Server/DC behind
    `git.PullRequestProvider`; selection via server config, never the request.
+   **← NEXT.**
 4. **PostgreSQL sessions + use-case RBAC** — `pgx`, `golang-migrate`,
    testcontainers (Docker verified available); developers see only their
    use cases.

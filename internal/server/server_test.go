@@ -14,7 +14,7 @@ import (
 // liveness probe. It MUST fail until routing is implemented in the Green phase
 // of Step 2: the stub Handler() serves 404 for every path.
 func TestHealthEndpointReturns200(t *testing.T) {
-	srv := New(web.Assets, nil, nil)
+	srv := New(web.Assets, nil, nil, nil)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
@@ -30,7 +30,7 @@ func TestHealthEndpointReturns200(t *testing.T) {
 // the embedded web/index.html at the site root. It MUST fail until the Green
 // phase wires the embedded filesystem into the router.
 func TestServesEmbeddedIndexHTML(t *testing.T) {
-	srv := New(web.Assets, nil, nil)
+	srv := New(web.Assets, nil, nil, nil)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)

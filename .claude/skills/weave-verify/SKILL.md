@@ -37,17 +37,32 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST http://127.0.0.1:18089/api/scaf
 curl -s -X POST http://127.0.0.1:18089/api/scaffold \
   -H 'Content-Type: application/json' \
   -d '{"moduleType":"cloud-run","instanceName":"smoke-test","inputs":{"service_name":"smoke-test","image":"gcr.io/x/y:1","size":"small"}}'
+# Day 1 init: re-init of the demo repo with its seeded project → 200 no-op
+curl -s -X POST http://127.0.0.1:18089/api/workspace \
+  -H 'Content-Type: application/json' -d '{"projectId":"acme-demo-project"}'   # {"changed":false}
+# Day 1 init: a different project → 201 with prUrl + branch weave/init-dev
+curl -s -X POST http://127.0.0.1:18089/api/workspace \
+  -H 'Content-Type: application/json' -d '{"projectId":"acme-new-project"}'
+# Day 1 init: missing projectId → 422 (caller fault, never 500)
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://127.0.0.1:18089/api/workspace \
+  -H 'Content-Type: application/json' -d '{}'
 kill %1
 ```
 
 The 201 response's `prUrl` must itself serve HTTP 200 (the fake Bitbucket PR
-page).
+page). Note the Day 1 no-op vs. 201 distinction: re-init is a no-op only when
+the request matches what the base branch already carries (same `projectId`);
+a different `projectId` is a legitimate change, not a no-op.
 
 ## 3. What "green" must include (do not rationalize away)
 
 - The e2e negative test (`TestEndToEnd_DemoLoop`): a 422 must leave the demo
   remote with **zero** new branches. If this fails, fail-before-mutate is
   broken somewhere between the API and git — treat as release-blocking.
+- The Day 1 e2e test (`TestEndToEnd_WorkspaceInit`): a fresh repo → 201 with
+  the scaffold pushed (injected `project_id` present) and the PR page serving
+  200; the already-scaffolded demo repo → 200 no-op that opens no branch.
+  Same fail-before-mutate boundary as Day 2, release-blocking if broken.
 - The leak tests: catalog responses must contain no `Source`, no
   `expandsTo`, no expansion values; generated files must not contain a
   choice input's name.

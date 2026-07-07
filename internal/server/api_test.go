@@ -68,7 +68,7 @@ func postgresSpec() registry.ModuleSpec {
 }
 
 func newAPIServer(reg registry.ModuleRegistry, sc Scaffolder) *Server {
-	return New(web.Assets, reg, sc)
+	return New(web.Assets, reg, sc, &stubInitializer{})
 }
 
 func doJSON(t *testing.T, srv *Server, method, path, body string) *httptest.ResponseRecorder {

@@ -4,7 +4,7 @@
 > the *current* state, and is explicit about which is which. Anything marked
 > **[TARGET]** is not built yet. As of 2026-07 the system is **v1 of the Weave
 > IDP**: the GitOps engine core, t-shirt-size choice modeling, orchestration,
-> HTTP API (`/health`, `/api/catalog`, `/api/scaffold`), the embedded web
+> HTTP API (`/health`, `/api/catalog`, `/api/workspace`, `/api/scaffold`), the embedded web
 > wizard, a zero-config local demo mode (`weaved -demo`), and the `cmd/weaved`
 > server binary — all complete, tested, and proven by an end-to-end test with
 > zero mocks in the production path (`internal/demo`).
@@ -83,8 +83,9 @@ browser.
 
 2. **Backend API (Go, `internal/server`) — complete, tested**
    - `GET /health` liveness probe + static file serving. Stateless,
-     dependency-injected via `New(static, registry.ModuleRegistry, Scaffolder)`;
-     `Scaffolder` is a one-method consumer-side interface satisfied by
+     dependency-injected via `New(static, registry.ModuleRegistry, Scaffolder,
+     WorkspaceInitializer)`; `Scaffolder` (Day 2) and `WorkspaceInitializer`
+     (Day 1) are one-method consumer-side interfaces both satisfied by
      `*orchestrate.Orchestrator` (compile-time asserted in the tests).
    - `GET /api/catalog` → 200 JSON DTO array (name, displayName, description,
      version, inputs name/type/required/description, and for choice inputs
@@ -106,6 +107,17 @@ browser.
      `400` malformed JSON or missing moduleType/instanceName (Scaffolder not
      invoked); `502 {error, branch}` for the push-succeeded/PR-failed seam
      (the pushed branch is surfaced, not lost); `500 {error}` otherwise.
+   - `POST /api/workspace {projectId, statePrefix?}` — the Day 1 counterpart:
+     it bootstraps `terraform/env/<env>/` (main.tf, `<env>.tfvars` with the
+     injected `project_id`, pipeline.yaml) in the target repo via the same
+     fail-before-mutate PR loop, driving `orchestrate.InitWorkspace`. Identical
+     status contract and classification rules as `/api/scaffold` (a missing
+     `projectId` is a caller fault → `validate.ErrMissingRequired` → 422).
+     `statePrefix` is Terraform backend plumbing: omitted by the wizard and
+     derived server-side as `weave/<env>`, so the developer never supplies it
+     (invariant: the developer never sees Terraform). Idempotent — re-init of
+     a workspace whose base branch already matches is a `200 {changed: false}`
+     no-op that opens no branch.
 
 3. **Module registry (`internal/registry`)**
    - *Current:* `spec.yaml` manifest parser (`ParseManifest`, apiVersion
@@ -138,11 +150,21 @@ browser.
      3. `CheckoutBranch("weave/add-<InstanceName>")`.
      4. `domain.AddResource`; if the `ChangeSet` is unchanged, `Run` returns
         `Result{Changed: false}` and stops — no stage/commit/push/PR.
-     5. `Stage` → `Commit` → `Push` → `CreatePullRequest`.
+     5. `Stage` → `Commit` → `Push` → `CreatePullRequest` (the shared
+        `publish` tail).
+   - `InitWorkspace` is the Day 1 sibling of `Run`: same clone-to-temp,
+     branch (`weave/init-<Env>`), and `publish` tail, but it calls
+     `domain.Scaffold` instead of `AddResource`. Its only pre-flight is a
+     non-blank `projectId` (a caller fault → `validate.ErrMissingRequired`);
+     an omitted `statePrefix` is derived as `weave/<Env>` so the developer
+     never supplies Terraform plumbing. Covered by `init_test.go` (fresh →
+     PR, already-scaffolded → no-op, missing projectId → zero remote
+     mutation) and end-to-end by `demo.TestEndToEnd_WorkspaceInit`.
    - Known risky seam, handled: if `CreatePullRequest` fails after a successful
-     `Push`, `Run` returns a non-nil error **and** `Result{Changed: true, Branch:
-     <pushed branch>}` — the caller can recover the pushed branch instead of
-     losing track of it. Covered by `TestRun_PRCreationFails_ReportsPushedBranch`.
+     `Push`, both `Run` and `InitWorkspace` return a non-nil error **and**
+     `Result{Changed: true, Branch: <pushed branch>}` — the caller can recover
+     the pushed branch instead of losing track of it. Covered by
+     `TestRun_PRCreationFails_ReportsPushedBranch`.
    - `Config` carries `RepoURL` (clone URL), `RepoSlug` (workspace/repo slug for
      the PR provider), `BaseBranch`, `Token`, `Env` — always server-owned,
      never populated from the request (see rule 3 below).
